@@ -18,4 +18,14 @@ To start the web interface (charts over the budget data) on http://localhost:300
 bun run web
 ```
 
+## Deploying to Fly.io
+
+The repo ships with a `fly.toml` (app `statsbudgeten-se`, region `arn`/Stockholm) and a `Dockerfile`. First time: `fly launch --no-deploy` to create the app under your account (or `fly apps create statsbudgeten-se`), then:
+
+```bash
+fly deploy
+```
+
+The server respects `PORT` and disables dev mode when `NODE_ENV=production` (both set by the Fly config).
+
 This project was created using `bun init` in bun v1.4.2. [Bun](https://bun.com) is a fast all-in-one JavaScript runtime.

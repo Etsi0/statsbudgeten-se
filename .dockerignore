@@ -1,0 +1,8 @@
+node_modules
+.git
+.env*
+fly.toml
+Dockerfile
+coverage
+*.tsbuildinfo
+.DS_Store

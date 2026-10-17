@@ -16,6 +16,7 @@ function listYears(): string[] {
 }
 
 const server = Bun.serve({
+  port: Number(process.env.PORT ?? 3000),
   routes: {
     "/": index,
     "/api/years": () => Response.json(listYears()),
@@ -27,7 +28,7 @@ const server = Bun.serve({
       return new Response(file, { headers: { "content-type": "application/json" } });
     },
   },
-  development: {
+  development: process.env.NODE_ENV !== "production" && {
     hmr: true,
     console: true,
   },
