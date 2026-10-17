@@ -1,0 +1,23 @@
+{
+  "name": "statsbudgeten-se",
+  "module": "index.ts",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "convert": "bun src/cli.ts",
+    "web": "bun --hot src/server.ts"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0"
+  },
+  "peerDependencies": {
+    "typescript": "^7"
+  },
+  "dependencies": {
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "zod": "^4.6.7"
+  }
+}
