@@ -151,6 +151,12 @@ button {
   font-variant-numeric: tabular-nums;
 }
 
+.pickers {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 24px;
+}
 .year-picker {
   display: flex;
   align-items: center;
@@ -179,6 +185,9 @@ button {
   font-variant-numeric: tabular-nums;
   cursor: pointer;
   box-shadow: none;
+}
+.unit-picker .seg button {
+  white-space: nowrap;
 }
 .seg button.active {
   background: var(--surface);
@@ -885,7 +894,13 @@ button {
   .menu-toggle {
     display: flex;
   }
-  /* Full-screen menu sliding in from the left. */
+  /* Full-screen menu sliding in from the left, over a page that is locked
+     and made inert while it is open. A swipe to the left closes it. */
+  html.menu-open,
+  html.menu-open body {
+    overflow: hidden;
+    overscroll-behavior: none;
+  }
   .menu-items {
     display: flex;
     position: fixed;
@@ -894,19 +909,54 @@ button {
     flex-direction: column;
     align-items: stretch;
     gap: 24px;
-    padding: 10px 20px 24px;
+    padding: max(10px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right)) max(24px, env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left));
     background: var(--page);
     overflow-y: auto;
+    overscroll-behavior: contain;
+    touch-action: pan-y;
+    box-shadow: 0 0 60px rgba(0, 0, 0, 0.25);
     transform: translateX(-100%);
     visibility: hidden;
     transition:
       transform 0.35s var(--ease),
       visibility 0s linear 0.35s;
+    will-change: transform;
   }
   .menu.open .menu-items {
     transform: none;
     visibility: visible;
     transition: transform 0.35s var(--ease);
+  }
+  /* The items settle in just after the sheet, one after the other. */
+  .menu-items > * {
+    opacity: 0;
+    transform: translateX(-16px);
+    transition:
+      opacity 0.25s ease,
+      transform 0.3s var(--ease);
+  }
+  .menu.open .menu-items > * {
+    opacity: 1;
+    transform: none;
+  }
+  .menu.open .menu-items > :nth-child(2) {
+    transition-delay: 0.1s;
+  }
+  .menu.open .menu-items > :nth-child(3) {
+    transition-delay: 0.15s;
+  }
+  .menu.open .menu-items > :nth-child(4) {
+    transition-delay: 0.2s;
+  }
+  .menu.open .menu-items > :nth-child(5) {
+    transition-delay: 0.25s;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .menu-items,
+    .menu-items > * {
+      transition-duration: 0s;
+      transition-delay: 0s !important;
+    }
   }
   .menu-items .sheet-head {
     display: flex;
@@ -935,10 +985,22 @@ button {
     font-size: 16px;
     padding: 10px 16px 10px 10px;
   }
+  .menu-items .pickers {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 24px;
+  }
   .menu-items .year-picker {
     flex-direction: column;
     align-items: flex-start;
     gap: 8px;
+  }
+  .menu-items .unit-picker .seg {
+    width: 100%;
+  }
+  .menu-items .unit-picker .seg button {
+    flex: 1;
+    white-space: nowrap;
   }
   .menu-items .year-picker .label {
     font-size: 13px;
