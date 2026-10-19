@@ -12,10 +12,13 @@
  *   /inkomster/1000/1111         inkomsttyp 1000 with inkomsttitel 1111 focused
  *   …?year=2024                  budget year (omitted for the latest year)
  *   …?inflation=1                amounts adjusted for inflation
+ *   …?andel=inkomster            graphs in percent of the year's revenues (andel=utgifter: of expenses)
  */
 
 export type View = "exp" | "rev";
 export type Mode = "overview" | "explore" | "about" | "search";
+/** What the graphs show: kronor, or percent of the year's revenues or expenses. */
+export type Unit = "kr" | "rev" | "exp";
 
 export type Route = {
   mode: Mode;
@@ -28,12 +31,14 @@ export type Route = {
   /** Focused row id within the group. */
   item: number | null;
   real: boolean;
+  unit: Unit;
   /** Search query; only meaningful in search mode. */
   q: string;
 };
 
 const VIEW_SLUG: Record<View, string> = { exp: "utgifter", rev: "inkomster" };
 const SLUG_VIEW: Record<string, View> = { utgifter: "exp", inkomster: "rev" };
+const UNIT_SLUG: Record<Unit, string | null> = { kr: null, rev: "inkomster", exp: "utgifter" };
 
 const parseYear = (s: string | null | undefined): number | null => (s && /^\d{4}$/.test(s) ? Number(s) : null);
 const parseNat = (s: string | undefined): number | null => (s && /^\d+$/.test(s) ? Number(s) : null);
@@ -42,7 +47,8 @@ export function parseRoute(url: URL): Route {
   const parts = url.pathname.split("/").filter(Boolean);
   const real = url.searchParams.get("inflation") === "1";
   const year = parseYear(url.searchParams.get("year"));
-  const none = { group: null, rest: false, item: null, real, q: "" };
+  const unit: Unit = SLUG_VIEW[url.searchParams.get("andel") ?? ""] ?? "kr";
+  const none = { group: null, rest: false, item: null, real, unit, q: "" };
   if (parts[0] === "om") return { mode: "about", view: "exp", year, ...none };
   if (parts[0] === "sok") return { mode: "search", view: "exp", year, ...none, q: url.searchParams.get("q")?.trim() ?? "" };
   const view = SLUG_VIEW[parts[0] ?? ""];
@@ -55,7 +61,7 @@ export function parseRoute(url: URL): Route {
     rest = true;
     i++;
   }
-  return { mode: "explore", view, year, group, rest, item: parseNat(parts[i]), real, q: "" };
+  return { mode: "explore", view, year, group, rest, item: parseNat(parts[i]), real, unit, q: "" };
 }
 
 /** Path + query for a route. `latest` lets the URL omit the default year. */
@@ -76,6 +82,8 @@ export function buildUrl(r: Route, latest: number | null): string {
   if (r.mode === "search" && r.q) q.set("q", r.q);
   if (r.year != null && r.year !== latest) q.set("year", String(r.year));
   if (r.real) q.set("inflation", "1");
+  const andel = UNIT_SLUG[r.unit];
+  if (andel) q.set("andel", andel);
   const s = q.toString();
   return s ? `${path}?${s}` : path;
 }
