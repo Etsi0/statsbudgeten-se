@@ -2,6 +2,7 @@
  * URL ⇄ app state.
  *
  *   /                            overview: inkomster vs utgifter per year
+ *   /om                          about page
  *   /utgifter                    treemap of all utgiftsområden (/inkomster: inkomsttyper)
  *   /utgifter/6                  utgiftsområde 6: its history graph above its anslag
  *   /utgifter/6/3                …with anslag 3 focused (the graph shows that anslag)
@@ -13,7 +14,7 @@
  */
 
 export type View = "exp" | "rev";
-export type Mode = "overview" | "explore";
+export type Mode = "overview" | "explore" | "about";
 
 export type Route = {
   mode: Mode;
@@ -38,6 +39,7 @@ export function parseRoute(url: URL): Route {
   const parts = url.pathname.split("/").filter(Boolean);
   const real = url.searchParams.get("inflation") === "1";
   const year = parseYear(url.searchParams.get("year"));
+  if (parts[0] === "om") return { mode: "about", view: "exp", year, group: null, rest: false, item: null, real };
   const view = SLUG_VIEW[parts[0] ?? ""];
   if (!view) return { mode: "overview", view: "exp", year, group: null, rest: false, item: null, real };
   const group = parseNat(parts[1]);
@@ -54,6 +56,7 @@ export function parseRoute(url: URL): Route {
 /** Path + query for a route. `latest` lets the URL omit the default year. */
 export function buildUrl(r: Route, latest: number | null): string {
   let path = "/";
+  if (r.mode === "about") path = "/om";
   if (r.mode === "explore") {
     const parts = [VIEW_SLUG[r.view]];
     if (r.group != null) {

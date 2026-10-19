@@ -33,6 +33,7 @@ The URL mirrors what is on screen (`src/web/routes.ts`):
 | URL | View |
 |---|---|
 | `/` | Overview: inkomster vs utgifter per year |
+| `/om` | About page, written in `content/om.md` and converted to JSON at build time by a Bun macro |
 | `/utgifter`, `/inkomster` | Treemap of all utgiftsområden / inkomsttyper |
 | `/utgifter/6` | Utgiftsområde 6: its history graph above the treemap of its anslag |
 | `/utgifter/6/3` | …with anslag 3 focused, so the graph shows that anslag |
@@ -40,6 +41,14 @@ The URL mirrors what is on screen (`src/web/routes.ts`):
 | `/inkomster/1000/1111` | Inkomsttyp 1000 with inkomsttitel 1111 focused |
 | `…?year=2024` | Budget year (omitted for the latest year) |
 | `…?inflation=1` | Amounts adjusted for inflation |
+
+## About page and source downloads
+
+`content/om.md` is a small Markdown subset (headings, paragraphs, lists, links,
+bold, code) parsed by `src/markdown.ts`. `src/web/content.macro.ts` runs at
+bundle time and inlines the parsed JSON into the client bundle. The line
+`[sources]` is replaced by download links for the workbooks in `examples/`,
+which the server lists at `/api/sources` and serves at `/examples/<file>`.
 
 ## Analytics
 

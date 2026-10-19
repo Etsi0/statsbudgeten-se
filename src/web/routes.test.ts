@@ -9,6 +9,12 @@ describe("parseRoute", () => {
     expect(at("/?year=2024&inflation=1")).toMatchObject({ mode: "overview", year: 2024, real: true });
   });
 
+  test("/om is the about page", () => {
+    expect(at("/om")).toMatchObject({ mode: "about", group: null });
+    expect(at("/om?year=2023&inflation=1")).toMatchObject({ mode: "about", year: 2023, real: true });
+    expect(buildUrl({ mode: "about", view: "exp", year: 2023, group: null, rest: false, item: null, real: true }, 2026)).toBe("/om?year=2023&inflation=1");
+  });
+
   test("/utgifter and /inkomster are the top-level treemaps", () => {
     expect(at("/utgifter")).toEqual({ mode: "explore", view: "exp", year: null, group: null, rest: false, item: null, real: false });
     expect(at("/inkomster?year=2022")).toMatchObject({ mode: "explore", view: "rev", year: 2022, group: null });
