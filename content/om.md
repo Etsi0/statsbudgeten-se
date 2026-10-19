@@ -6,7 +6,7 @@ Statsbudgeten.se visar Sveriges statsbudget. Varje ruta är ett utgiftsområde e
 
 Alla belopp kommer oförändrade från de officiella källorna nedan. Sajten är fristående och har ingen koppling till Regeringskansliet eller SCB.
 
-## Varför har någon bygga det här?
+## Varför har någon byggt det här?
 
 För att Sveriges statsbudget är ett mer eller mindre helt oläsligt dokument på 3200+ sidor som Finansministern lite halv-cermoniellt dumpar på riksdagens hemsida och trappsteg. Om vi inte förstår hur våra skattepengar används, blir det väldigt svårt att säga om statsministern gjort ett bra jobb eller inte.
 
@@ -32,4 +32,4 @@ Budgetfilerna är regeringens specifikation av budgetens utgifter och inkomster 
 Filerna som sajten bygger på, i original:
 [sources]
 
-Så läs, njut av siffernörder i och granska era politiker!
+Så läs, njut av siffer-nörderi och granska era politiker!
