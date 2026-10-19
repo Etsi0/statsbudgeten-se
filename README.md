@@ -21,6 +21,13 @@ bun run web
 The server lists every `data/YYYY.json` it finds. With more than one year present, the
 year picker lets you switch budget year and every area/item gets a history line chart.
 
+## Analytics
+
+Google Analytics is wired up in `src/web/analytics.ts` (measurement ID at the
+top of the file). It is not loaded on localhost. Since the app is a single page,
+each drill state (tab, year, area, Övriga) is reported as a virtual page view,
+and opening a history chart or flipping the inflation toggle are events.
+
 ## Deploying to Fly.io
 
 The repo ships with a `fly.toml` (app `statsbudgeten-se`, region `arn`/Stockholm) and a `Dockerfile`. First time: `fly launch --no-deploy` to create the app under your account (or `fly apps create statsbudgeten-se`), then:

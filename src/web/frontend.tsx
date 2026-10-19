@@ -7,6 +7,7 @@ import { createRoot } from "react-dom/client";
 import { BudgetJsonSchema, type BudgetJson } from "../../types/BudgetJsonSchema";
 import { InflationSchema } from "../../types/InflationSchema";
 import { inflationFactors } from "../inflation";
+import { initAnalytics, trackEvent, trackPageView } from "./analytics";
 import "./styles.css";
 
 // ---- Design-only tweaks (constants in production) ----------------------------
@@ -498,6 +499,7 @@ function App() {
   }, []);
 
   const openHist = useCallback((h: Hist) => {
+    trackEvent("open_history", { view: h.view, group: h.gkey, row: h.row ?? "", title: h.title });
     clearTimeout(histTimer.current);
     setHist(h);
     setHistOpen(false);
@@ -547,6 +549,21 @@ function App() {
   const rev = view === "rev";
   const T = COPY[view];
   const B = year != null ? budgets[year] : undefined;
+
+  // Each drill state is a virtual page for analytics.
+  const pageTitle = (() => {
+    if (year == null) return "";
+    const g = uo != null && B ? normalize(B, view).find((x) => x.key === uo) : undefined;
+    const where = g ? `${g.title}${rest ? " · Övriga" : ""}` : T.root;
+    return `${where} · ${rev ? "Inkomster" : "Utgifter"} ${year}`;
+  })();
+  useEffect(() => {
+    if (year == null) return;
+    const parts = [rev ? "inkomster" : "utgifter", String(year)];
+    if (uo != null) parts.push(uo);
+    if (rest) parts.push("ovriga");
+    trackPageView(`/${parts.join("/")}`, pageTitle);
+  }, [rev, year, uo, rest, pageTitle]);
   const multiYear = yrs.length > 1;
 
   // Inflation adjustment: everything is expressed in the latest year's prices.
@@ -686,6 +703,7 @@ function App() {
             className={`switch${real ? " on" : ""}`}
             title={`Räkna om alla belopp till ${baseYear} års prisnivå (KPI)`}
             onClick={() => {
+              trackEvent("toggle_inflation", { enabled: !real, base_year: baseYear ?? "" });
               setReal((r) => !r);
               setHover(null);
             }}
@@ -856,4 +874,5 @@ function App() {
   );
 }
 
+initAnalytics();
 createRoot(document.getElementById("root")!).render(<App />);
