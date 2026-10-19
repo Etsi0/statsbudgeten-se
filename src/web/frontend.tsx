@@ -12,8 +12,13 @@ import { BudgetJsonSchema, type BudgetJson } from "../../types/BudgetJsonSchema"
 import { InflationSchema } from "../../types/InflationSchema";
 import { chooseBaseYear, inflationFactors } from "../inflation";
 import { initAnalytics, trackEvent, trackPageView } from "./analytics";
+import { aboutContent } from "./content.macro" with { type: "macro" };
+import type { Block, Inline } from "../markdown";
 import { buildUrl, groupKey, groupNumber, parseRoute, type Mode, type View } from "./routes";
 import "./styles.css";
+
+/** content/om.md, converted to JSON when the bundle is built. */
+const ABOUT: Block[] = aboutContent();
 
 // ---- Design-only tweaks (constants in production) ----------------------------
 
@@ -604,6 +609,96 @@ function Tile({ it, rect, w, h, bg, fg, share, info, hovered, focused, zoomed, o
   );
 }
 
+// ---- About page ----------------------------------------------------------------
+
+type Source = { file: string; label: string; size: number };
+
+const fsize = (bytes: number) => `${NF0.format(Math.max(1, Math.round(bytes / 1024)))} kB`;
+
+function Inlines({ inlines }: { inlines: Inline[] }) {
+  return (
+    <>
+      {inlines.map((n, i) => {
+        if (n.t === "link") {
+          const external = /^https?:/.test(n.href);
+          return (
+            <a key={i} href={n.href} target={external ? "_blank" : undefined} rel={external ? "noopener" : undefined}>
+              {n.s}
+            </a>
+          );
+        }
+        if (n.t === "strong") return <strong key={i}>{n.s}</strong>;
+        if (n.t === "code") return <code key={i}>{n.s}</code>;
+        return <React.Fragment key={i}>{n.s}</React.Fragment>;
+      })}
+    </>
+  );
+}
+
+function About() {
+  const [sources, setSources] = useState<Source[] | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/sources")
+      .then((r) => (r.ok ? r.json() : []))
+      .then((list) => !cancelled && setSources(list as Source[]))
+      .catch(() => !cancelled && setSources([]));
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  return (
+    <div className="panel about">
+      <article className="prose" lang="sv">
+        {ABOUT.map((b, i) => {
+          if (b.t === "h") {
+            const Tag = `h${b.level}` as "h1" | "h2" | "h3";
+            return (
+              <Tag key={i}>
+                <Inlines inlines={b.inlines} />
+              </Tag>
+            );
+          }
+          if (b.t === "p")
+            return (
+              <p key={i}>
+                <Inlines inlines={b.inlines} />
+              </p>
+            );
+          if (b.t === "ul")
+            return (
+              <ul key={i}>
+                {b.items.map((it, j) => (
+                  <li key={j}>
+                    <Inlines inlines={it} />
+                  </li>
+                ))}
+              </ul>
+            );
+          return (
+            <ul key={i} className="downloads">
+              {sources == null && <li className="muted">Hämtar filer …</li>}
+              {sources?.length === 0 && <li className="muted">Inga filer tillgängliga.</li>}
+              {sources?.map((src) => (
+                <li key={src.file}>
+                  <a href={`/examples/${encodeURIComponent(src.file)}`} download>
+                    {src.label}
+                  </a>
+                  <span className="muted">
+                    {" "}
+                    · {src.file} · {fsize(src.size)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          );
+        })}
+      </article>
+    </div>
+  );
+}
+
 // ---- App ----------------------------------------------------------------------
 
 const initialRoute = parseRoute(new URL(window.location.href));
@@ -706,6 +801,7 @@ function App() {
       if (e.key !== "Escape") return;
       if (menuOpen) return setMenuOpen(false);
       if (zoomKey != null) return setZoomKey(null);
+      if (mode === "about") return showOverview();
       if (itemKey != null || pendingItem != null) {
         setItemKey(null);
         setPendingItem(null);
@@ -715,7 +811,7 @@ function App() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [menuOpen, zoomKey, itemKey, pendingItem, rest]);
+  }, [menuOpen, zoomKey, mode, itemKey, pendingItem, rest]);
   // A zoomed tile belongs to one level; leave it when the level changes.
   useEffect(() => setZoomKey(null), [mode, view, year, uo, rest]);
 
@@ -724,8 +820,16 @@ function App() {
     setPendingItem(null);
   };
 
-  const showOverview = () => {
+  function showOverview() {
     setMode("overview");
+    setUo(null);
+    setRest(false);
+    clearFocus();
+    setHover(null);
+  }
+
+  const showAbout = () => {
+    setMode("about");
     setUo(null);
     setRest(false);
     clearFocus();
@@ -806,7 +910,9 @@ function App() {
 
   // Keep the URL and the document title in step with what is on screen.
   const pageTitle =
-    mode === "overview"
+    mode === "about"
+      ? "Om sajten"
+      : mode === "overview"
       ? "Inkomster och utgifter"
       : year == null
         ? T.label
@@ -901,7 +1007,9 @@ function App() {
     ? colorOf(focusItem, true)
     : { bg: group ? (COLOR_MODE === "färg" ? `oklch(0.80 0.09 ${hueOf[group.key]})` : "oklch(0.86 0.01 260)") : PAPER, fg: INK };
 
-  const base: Info = !B
+  const base: Info = mode === "about"
+    ? { title: "Om Statsbudgeten", hint: "Esc eller Översikt för att gå tillbaka" }
+    : !B
     ? { title: error ? "Kunde inte läsa data" : "Läser in …" }
     : mode === "overview"
       ? {
@@ -925,6 +1033,7 @@ function App() {
           };
   const info = hover ?? base;
   const overview = mode === "overview";
+  const about = mode === "about";
 
   return (
     <div className="app" lang="sv">
@@ -952,10 +1061,18 @@ function App() {
           className="menu-items"
           id="menu-items"
           onClick={(e) => {
-            // On mobile the menu is a dropdown: any choice closes it.
+            // On mobile the menu slides in over the page: any choice closes it.
             if ((e.target as HTMLElement).closest("button")) setMenuOpen(false);
           }}
         >
+        <div className="sheet-head">
+          <span className="brand">Statsbudgeten</span>
+          <button type="button" className="icon-btn" aria-label="Stäng menyn" onClick={() => setMenuOpen(false)}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden>
+              <path d="M6 6l12 12M18 6L6 18" />
+            </svg>
+          </button>
+        </div>
         <nav className="tabs" aria-label="Vy">
           <button type="button" className={`tab${overview ? " active" : ""}`} aria-current={overview ? "page" : undefined} onClick={showOverview}>
             <span>Översikt</span>
@@ -966,7 +1083,7 @@ function App() {
               ["rev", "var(--revenue)", B ? B.revenuesTotal * f : undefined],
             ] as const
           ).map(([k, dot, tot]) => {
-            const active = !overview && view === k;
+            const active = !overview && !about && view === k;
             return (
               <button key={k} type="button" className={`tab${active ? " active" : ""}`} aria-current={active ? "page" : undefined} onClick={() => showGraph(k)}>
                 <span className="dot" style={{ background: dot }} />
@@ -975,6 +1092,9 @@ function App() {
               </button>
             );
           })}
+          <button type="button" className={`tab${about ? " active" : ""}`} aria-current={about ? "page" : undefined} onClick={showAbout}>
+            <span>Om</span>
+          </button>
         </nav>
         {hasInflation && (
           <button
@@ -1019,7 +1139,13 @@ function App() {
 
       <header className="crumb-row">
         <nav className="crumbs" aria-label="Brödsmulor">
-          {overview ? (
+          {about ? (
+            <span className="crumb">
+              <button type="button" className="current" disabled>
+                Om sajten
+              </button>
+            </span>
+          ) : overview ? (
             <span className="crumb">
               <button type="button" className="current" disabled>
                 Inkomster och utgifter
@@ -1079,11 +1205,13 @@ function App() {
       </header>
 
       <div className="stage">
+        {about && <About />}
+
         {overview && B && year != null && (
           <Overview years={yrs} budgets={budgets} year={year} {...prices} />
         )}
 
-        {!overview && group && year != null && multiYear && (
+        {!overview && !about && group && year != null && multiYear && (
           <FocusPanel
             years={yrs}
             budgets={budgets}
@@ -1099,7 +1227,7 @@ function App() {
           />
         )}
 
-        {!overview && (
+        {!overview && !about && (
           <div className="map" ref={mapRef} onClick={() => setZoomKey(null)}>
             {rects.map(({ it, x: x0, y: y0, w: w0, h: h0 }) => {
               const { bg, fg } = colorOf(it, !!group);
