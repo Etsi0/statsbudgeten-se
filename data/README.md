@@ -5,7 +5,7 @@ Contains the JSON files generated from the official excel files.
 Generate with:
 
 ```sh
-bun run convert                  # converts every xlsx in examples/
+bun run convert                  # converts every <year>.xlsx in examples/
 bun run convert path/to/file.xlsx
 ```
 
@@ -15,8 +15,18 @@ sheet titles) and validated against `BudgetJsonSchema` before being written.
 ## inflation.json
 
 Optional. Annual inflation in percent per year, used by the web interface's
-"Justera för inflation" toggle, which re-expresses every amount in the latest
-budget year's prices:
+"Justera för inflation" toggle. Generate it from SCB's "Inflation i Sverige
+1831–" workbook (xlsx export, the one with a `Data` sheet of År | Inflation |
+Prisnivå):
+
+```sh
+bun run convert-inflation                 # reads examples/inflation.xlsx
+bun run convert-inflation path/to/file.xlsx
+```
+
+The toggle re-expresses every amount in the prices of the latest budget year
+that has a rate of its own (the budget runs a year ahead of the statistics, so
+the newest budget year is usually shown nominal and marked `*`):
 
 ```json
 {
@@ -27,7 +37,6 @@ budget year's prices:
 ```
 
 `rates[Y]` is the change in the consumer price index from year Y−1 to year Y.
-Converting year A into year B's prices chains the rates for A+1 … B, so the
-base (latest) year needs no rate of its own but every year between does. Years
+Converting year A into year B's prices chains the rates for A+1 … B. Years
 that cannot be converted are shown nominal and marked with `*` while the
 toggle is on. With no usable rates the toggle is hidden.

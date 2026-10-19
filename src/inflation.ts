@@ -35,3 +35,16 @@ export function inflationFactors(rates: InflationRates, years: number[], base: n
   const convertible = years.filter((y) => factors.get(y) != null);
   return { factors, convertible };
 }
+
+/**
+ * The year whose prices everything is expressed in: the latest of `years`
+ * that has a rate of its own, so that earlier years can be chained up to it.
+ * (The budget runs a year ahead of the statistics, so the newest budget year
+ * usually has no rate yet and is shown nominal instead.) Falls back to the
+ * latest year when no year has a rate.
+ */
+export function chooseBaseYear(rates: InflationRates, years: number[]): number | null {
+  if (years.length === 0) return null;
+  const sorted = [...years].sort((a, b) => b - a);
+  return sorted.find((y) => typeof rates[String(y)] === "number") ?? sorted[0]!;
+}

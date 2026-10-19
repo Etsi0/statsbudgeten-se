@@ -100,7 +100,7 @@ describe("revenues", () => {
 });
 
 describe("every workbook in examples/", () => {
-  const files = [...new Bun.Glob("*.xlsx").scanSync(`${import.meta.dir}/../examples`)].sort();
+  const files = [...new Bun.Glob("[0-9][0-9][0-9][0-9].xlsx").scanSync(`${import.meta.dir}/../examples`)].sort();
 
   test("there are workbooks to test", () => {
     expect(files.length).toBeGreaterThan(0);

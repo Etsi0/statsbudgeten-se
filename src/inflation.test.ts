@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { InflationSchema } from "../types/InflationSchema";
-import { inflationFactor, inflationFactors } from "./inflation";
+import { chooseBaseYear, inflationFactor, inflationFactors } from "./inflation";
 
 const rates = { "2023": 10, "2024": 5, "2025": 0, "2026": 2 };
 
@@ -54,5 +54,17 @@ describe("InflationSchema", () => {
   test("rejects non-year keys and non-numeric rates", () => {
     expect(InflationSchema.safeParse({ rates: { "24": 2.8 } }).success).toBe(false);
     expect(InflationSchema.safeParse({ rates: { "2024": "2,8" } }).success).toBe(false);
+  });
+});
+
+describe("chooseBaseYear", () => {
+  test("is the latest year that has a rate of its own", () => {
+    expect(chooseBaseYear({ "2023": 8.5, "2024": 2.8, "2025": 0.7 }, [2022, 2023, 2024, 2025, 2026])).toBe(2025);
+    expect(chooseBaseYear({ "2026": 2 }, [2022, 2026])).toBe(2026);
+  });
+
+  test("falls back to the latest year when no year has a rate", () => {
+    expect(chooseBaseYear({}, [2022, 2026])).toBe(2026);
+    expect(chooseBaseYear({}, [])).toBeNull();
   });
 });

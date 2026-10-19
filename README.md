@@ -12,6 +12,13 @@ To convert the official xlsx files in `examples/` to JSON in `data/`:
 bun run convert
 ```
 
+To convert SCB's inflation workbook in `examples/inflation.xlsx` to `data/inflation.json`
+(powers the "Justera för inflation" toggle):
+
+```bash
+bun run convert-inflation
+```
+
 To start the web interface (a click-to-drill treemap over the budget data) on http://localhost:3000:
 
 ```bash

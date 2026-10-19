@@ -6,7 +6,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { createRoot } from "react-dom/client";
 import { BudgetJsonSchema, type BudgetJson } from "../../types/BudgetJsonSchema";
 import { InflationSchema } from "../../types/InflationSchema";
-import { inflationFactors } from "../inflation";
+import { chooseBaseYear, inflationFactors } from "../inflation";
 import { initAnalytics, trackEvent, trackPageView } from "./analytics";
 import "./styles.css";
 
@@ -566,8 +566,9 @@ function App() {
   }, [rev, year, uo, rest, pageTitle]);
   const multiYear = yrs.length > 1;
 
-  // Inflation adjustment: everything is expressed in the latest year's prices.
-  const baseYear = yrs.length ? yrs[yrs.length - 1]! : null;
+  // Inflation adjustment: everything is expressed in the prices of the latest
+  // year that has a known rate (the newest budget year usually has none yet).
+  const baseYear = useMemo(() => chooseBaseYear(rates, yrs), [rates, yrs]);
   const { factors, convertible } = useMemo(() => inflationFactors(rates, yrs, baseYear ?? 0), [rates, yrs, baseYear]);
   const hasInflation = baseYear != null && convertible.length > 1;
   const factorOf = (y: number) => (real ? (factors.get(y) ?? 1) : 1);

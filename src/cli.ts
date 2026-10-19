@@ -1,13 +1,14 @@
 /**
  * Converts budget specification xlsx files to JSON in data/<year>.json.
  *
- * Usage: bun run convert [file.xlsx ...]   (defaults to every xlsx in examples/)
+ * Usage: bun run convert [file.xlsx ...]   (defaults to every <year>.xlsx in examples/)
  */
 import { parseBudgetWorkbook } from "./parseBudget";
 
 let paths = Bun.argv.slice(2);
 if (paths.length === 0) {
-  paths = [...new Bun.Glob("examples/*.xlsx").scanSync(import.meta.dir + "/..")].sort();
+  // Budget workbooks are named by year; examples/ also holds the SCB inflation workbook.
+  paths = [...new Bun.Glob("examples/[0-9][0-9][0-9][0-9].xlsx").scanSync(import.meta.dir + "/..")].sort();
 }
 if (paths.length === 0) {
   console.error("No xlsx files given and none found in examples/");
