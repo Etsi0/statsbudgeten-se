@@ -459,35 +459,34 @@ export function renderSvg(route: Route, data: Data, format: Format = "link"): st
   const { year } = s;
   const nominal = s.display.unit === "kr" ? s.prices.nominal : () => false;
   const priceNote = s.display.unit === "kr" ? s.prices.priceNote : "";
-  const { w: WIDTH, h: HEIGHT } = FORMATS[format].canvas;
-  const pad = 36;
+  const { canvas: { w: WIDTH, h: HEIGHT }, pad: { x: padX, y: padY } } = FORMATS[format];
   const out: string[] = [];
   out.push(`<rect width="${WIDTH}" height="${HEIGHT}" fill="${PAGE}"/>`);
-  out.push(logo(pad, pad, 36));
-  const brandX = pad + 36 + 14;
-  out.push(text(brandX, pad + 29, "Statsbudgeten", { size: 30, weight: 700, fill: INK, spacing: "-0.6" }));
-  out.push(text(brandX + textWidth("Statsbudgeten", 30, 700) - 1, pad + 29, ".se", { size: 30, weight: 700, fill: MUTED, spacing: "-0.6" }));
+  out.push(logo(padX, padY, 36));
+  const brandX = padX + 36 + 14;
+  out.push(text(brandX, padY + 29, "Statsbudgeten", { size: 30, weight: 700, fill: INK, spacing: "-0.6" }));
+  out.push(text(brandX + textWidth("Statsbudgeten", 30, 700) - 1, padY + 29, ".se", { size: 30, weight: 700, fill: MUTED, spacing: "-0.6" }));
 
   // Posted images end with the page's address.
   const footer = format === "link" ? 0 : 30;
   if (footer) {
     const latest = s.years[s.years.length - 1] ?? null;
     const address = `statsbudgeten.se${buildUrl({ ...route, q: "" }, latest).replace(/^\/$/, "")}`;
-    out.push(text(WIDTH / 2, HEIGHT - pad + 4, address, { size: 15, weight: 600, fill: SECONDARY, anchor: "middle" }));
+    out.push(text(WIDTH / 2, HEIGHT - padY + 4, address, { size: 15, weight: 600, fill: SECONDARY, anchor: "middle" }));
   }
-  const body: Box = { x: pad, y: pad + 36 + 24, w: WIDTH - pad * 2, h: HEIGHT - pad * 2 - 36 - 24 - footer };
+  const body: Box = { x: padX, y: padY + 36 + 24, w: WIDTH - padX * 2, h: HEIGHT - padY * 2 - 36 - 24 - footer };
   if (route.mode === "overview") {
-    out.push(text(WIDTH - pad, pad + 27, `Budgetår ${year}${nominal(year) ? "*" : ""}`, { size: 16, weight: 600, fill: SECONDARY, anchor: "end" }));
+    out.push(text(WIDTH - padX, padY + 27, `Budgetår ${year}${nominal(year) ? "*" : ""}`, { size: 16, weight: 600, fill: SECONDARY, anchor: "end" }));
     out.push(overviewPanel(body, s));
   } else if (!s.group) {
     const groups = s.all.filter((g) => g.total > 0);
     const notes = `${nominal(year) ? "* nominellt" : ""}${s.display.unitNote}${priceNote}`.replace(/^ · /, "");
-    if (notes) out.push(text(WIDTH - pad, pad + 27, notes, { size: 16, weight: 600, fill: SECONDARY, anchor: "end" }));
+    if (notes) out.push(text(WIDTH - padX, padY + 27, notes, { size: 16, weight: 600, fill: SECONDARY, anchor: "end" }));
     out.push(text(body.x, body.y + 24, `${T.heading} ${year}${nominal(year) ? "*" : ""}`, { size: 26, weight: 700, fill: INK, spacing: "-0.5" }));
     out.push(text(body.x + body.w, body.y + 24, `${fmd(s.parentTotal)} · ${groups.length} ${T.areas}`, { size: 16, weight: 600, fill: SECONDARY, anchor: "end" }));
     out.push(treemap({ x: body.x, y: body.y + 44, w: body.w, h: body.h - 44 }, s));
   } else {
-    out.push(text(WIDTH - pad, pad + 27, `${T.label} ${year}${nominal(year) ? "*" : ""}`, { size: 16, weight: 600, fill: SECONDARY, anchor: "end" }));
+    out.push(text(WIDTH - padX, padY + 27, `${T.label} ${year}${nominal(year) ? "*" : ""}`, { size: 16, weight: 600, fill: SECONDARY, anchor: "end" }));
     const multiYear = s.years.length > 1;
     const panelH = multiYear ? Math.round(Math.min(320, Math.max(232, body.h * 0.36))) : 0;
     if (multiYear) out.push(focusPanel({ x: body.x, y: body.y, w: body.w, h: panelH }, s));

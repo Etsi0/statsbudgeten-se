@@ -24,13 +24,16 @@ export type FormatSpec = {
   h: number;
   /** The canvas the scene is drawn on; the output is a scaled-up copy. */
   canvas: { w: number; h: number };
+  /** Margins on the canvas. Stories keep clear of the app chrome at the top and bottom. */
+  pad: { x: number; y: number };
 };
 
 export const FORMATS: Record<Format, FormatSpec> = {
-  link: { label: "Länk", ratio: "1,91:1", w: 1200, h: 630, canvas: { w: 1200, h: 630 } },
-  square: { label: "Kvadrat", ratio: "1:1", w: 1080, h: 1080, canvas: { w: 720, h: 720 } },
-  portrait: { label: "Porträtt", ratio: "4:5", w: 1080, h: 1350, canvas: { w: 720, h: 900 } },
-  story: { label: "Story", ratio: "9:16", w: 1080, h: 1920, canvas: { w: 720, h: 1280 } },
+  link: { label: "Länk", ratio: "1,91:1", w: 1200, h: 630, canvas: { w: 1200, h: 630 }, pad: { x: 36, y: 36 } },
+  square: { label: "Kvadrat", ratio: "1:1", w: 1080, h: 1080, canvas: { w: 720, h: 720 }, pad: { x: 36, y: 36 } },
+  portrait: { label: "Porträtt", ratio: "4:5", w: 1080, h: 1350, canvas: { w: 720, h: 900 }, pad: { x: 36, y: 44 } },
+  // 168 on the canvas is 252 px in the output, the band Instagram and TikTok cover.
+  story: { label: "Story", ratio: "9:16", w: 1080, h: 1920, canvas: { w: 720, h: 1280 }, pad: { x: 48, y: 168 } },
 };
 
 export const FORMAT_KEYS = Object.keys(FORMATS) as Format[];
