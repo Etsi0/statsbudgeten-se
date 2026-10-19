@@ -98,3 +98,33 @@ describe("revenues", () => {
     expect(typ9000.total).toBe(0);
   });
 });
+
+describe("every workbook in examples/", () => {
+  const files = [...new Bun.Glob("*.xlsx").scanSync(`${import.meta.dir}/../examples`)].sort();
+
+  test("there are workbooks to test", () => {
+    expect(files.length).toBeGreaterThan(0);
+  });
+
+  for (const file of files) {
+    test(`${file} parses, validates and reports the year from its filename`, async () => {
+      const bytes = new Uint8Array(await Bun.file(`${import.meta.dir}/../examples/${file}`).arrayBuffer());
+      const { year, budget } = parseBudgetWorkbook(bytes);
+      expect(String(year)).toBe(file.replace(".xlsx", ""));
+      expect(BudgetJsonSchema.safeParse(budget).success).toBe(true);
+      // 27 utgiftsområden in order, every one with anslag.
+      expect(budget.expenses.map((g) => g.uo)).toEqual(Array.from({ length: 27 }, (_, i) => i + 1));
+      expect(budget.expenses.every((g) => g.rows.length > 0)).toBe(true);
+      expect(budget.expenses[0]!.title).toBe("Rikets styrelse");
+      // The nine inkomsttyper, the big ones with titlar.
+      expect(budget.revenues.map((g) => g.id_start)).toEqual([1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000]);
+      expect(budget.revenues[0]!.rows.length).toBeGreaterThan(100);
+      expect(budget.revenues[0]!.rows.some((r) => r.id === 1111)).toBe(true);
+      // No float noise in the output.
+      for (const g of budget.revenues) for (const r of g.rows) expect(r.revenue).toBe(Math.round(r.revenue * 100) / 100);
+      // Plausible magnitudes (tkr): both sides above 1 000 mdkr.
+      expect(budget.expensesTotal).toBeGreaterThan(1_000_000_000);
+      expect(budget.revenuesTotal).toBeGreaterThan(1_000_000_000);
+    });
+  }
+});

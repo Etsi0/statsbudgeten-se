@@ -27,3 +27,9 @@ All sums are validated at every level. Expenses add up exactly; the official
 file rounds each revenue level to Tkr independently, so revenue totals are
 allowed to differ from the sum of their rows by up to 2 Tkr (the 2026 file
 has genuine ±1 differences at inkomsttyp 1000, 7000 and "Summa inkomster").
+
+The workbook layout differs between years (column offsets, where the
+inkomsttitel codes sit, a missing utgiftsområde 1 header in 2023, a missing
+Inkomster title and a different total label in 2022, decimal tkr in 2023 and
+2025). `src/parseBudget.ts` detects these per sheet; see its header comment.
+Decimal amounts are kept but rounded to two decimals to drop float noise.

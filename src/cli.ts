@@ -16,7 +16,8 @@ if (paths.length === 0) {
 
 for (const path of paths) {
   const bytes = new Uint8Array(await Bun.file(path).arrayBuffer());
-  const { year, budget } = parseBudgetWorkbook(bytes);
+  const { year, budget, warnings } = parseBudgetWorkbook(bytes);
+  for (const w of warnings) console.warn(`${path}: ${w}`);
   const outPath = `data/${year}.json`;
   await Bun.write(outPath, JSON.stringify(budget, null, 2) + "\n");
   const anslag = budget.expenses.reduce((s, g) => s + g.rows.length, 0);
