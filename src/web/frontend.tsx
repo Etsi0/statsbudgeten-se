@@ -40,6 +40,9 @@ const fmd = (tkr: number) => {
 };
 const fpct = (p: number) => `${p >= 10 ? NF0.format(p) : p >= 0.1 ? NF1.format(p) : "<0,1"} %`;
 const signed = (v: number) => (v > 0 ? "+" : v < 0 ? "−" : "±") + fmd(Math.abs(v));
+/** Exact amount in tkr, e.g. "1 543 317 501 tkr". */
+const ftkr = (tkr: number) => `${NF0.format(Math.round(tkr))} tkr`;
+const sign = (v: number) => (v > 0 ? "+" : v < 0 ? "−" : "±");
 
 // ---- Data model ---------------------------------------------------------------
 
@@ -231,28 +234,93 @@ function useRevealed() {
 type LineChartProps = {
   series: Series[];
   years: number[];
+  /** The budget year picked in the menu: drawn bigger. */
   year: number;
   nominal: (y: number) => boolean;
   /** Fill for unselected dots, i.e. the panel background. */
   paper: string;
-  onSelectYear: (y: number) => void;
-  infoFor?: (y: number) => Info;
-  onHover: (info: Info | null) => void;
+  /** Extra line at the bottom of the info box for year index i, e.g. the saldo. */
+  extra?: (i: number) => string | null;
 };
 
-function LineChart({ series, years, year, nominal, paper, onSelectYear, infoFor, onHover }: LineChartProps) {
+/**
+ * Line chart with an info box: hovering a year's dot or label shows the exact
+ * figures and the change from the previous year; clicking pins the box.
+ */
+function LineChart({ series, years, year, nominal, paper, extra }: LineChartProps) {
   const open = useRevealed();
+  const [hoverYear, setHoverYear] = useState<number | null>(null);
+  const [pinnedYear, setPinnedYear] = useState<number | null>(null);
   const n = years.length;
   const { Y, grid } = niceScale(series.flatMap((s) => s.points.map((p) => p.v)));
   const pts = (s: Series) => s.points.map((p, i) => `${X(i, n).toFixed(2)},${Y(p.v).toFixed(2)}`).join(" ");
   const selIndex = Math.max(0, years.indexOf(year));
-  const hover = (y: number) => infoFor && onHover(infoFor(y));
   // With several series, each year's highest value is labelled above its dot
   // and the others below, so labels never collide where the lines run close.
   const below = (s: Series, i: number) => series.length > 1 && series.some((o) => o !== s && (o.points[i]?.v ?? -Infinity) > (s.points[i]?.v ?? -Infinity));
 
+  const shown = hoverYear ?? pinnedYear;
+  const shownIndex = shown != null ? years.indexOf(shown) : -1;
+  const toggle = (y: number) => setPinnedYear((p) => (p === y ? null : y));
+  const handlers = (y: number) => ({
+    onMouseEnter: () => setHoverYear(y),
+    onMouseLeave: () => setHoverYear(null),
+    onFocus: () => setHoverYear(y),
+    onBlur: () => setHoverYear(null),
+    onClick: (e: React.MouseEvent) => {
+      e.stopPropagation();
+      toggle(y);
+    },
+  });
+
+  let box: React.ReactNode = null;
+  if (shownIndex >= 0) {
+    const i = shownIndex;
+    const y = years[i]!;
+    const prevYear = i > 0 ? years[i - 1]! : null;
+    const mixed = prevYear != null && nominal(y) !== nominal(prevYear);
+    const ys = series.map((s) => Y(s.points[i]?.v ?? 0));
+    const mid = ys.reduce((a, b) => a + b, 0) / ys.length;
+    const x = X(i, n);
+    const side = i < n / 2 ? { left: `calc(${x}% + 28px)` } : { right: `calc(${100 - x}% + 28px)` };
+    box = (
+      <div
+        className={`infobox${series.length > 1 ? " multi" : ""}${pinnedYear === y && hoverYear == null ? " pinned" : ""}`}
+        role="status"
+        style={{ ...side, top: `clamp(-24px, calc(${mid}% - var(--box-h) / 2), calc(100% - var(--box-h) + 40px))` }}
+      >
+        <div className="ib-year">
+          {y}
+          {nominal(y) ? "*" : ""}
+          {prevYear != null && <span className="ib-vs"> · jämfört med {prevYear}</span>}
+        </div>
+        {series.map((s) => {
+          const v = s.points[i]?.v ?? 0;
+          const prev = prevYear != null ? (s.points[i - 1]?.v ?? 0) : null;
+          const d = prev != null ? v - prev : null;
+          const pct = d != null && prev ? (d / prev) * 100 : null;
+          return (
+            <div className="ib-row" key={s.key}>
+              {series.length > 1 && (
+                <span className="ib-label">
+                  {s.color && <span className="swatch" style={{ background: s.color }} />}
+                  {s.label}
+                </span>
+              )}
+              <span className="ib-val">{ftkr(v)}</span>
+              <span className="ib-diff">
+                {d != null ? `${sign(d)}${ftkr(Math.abs(d))}${pct != null ? ` (${sign(pct)}${NF1.format(Math.abs(pct))} %)` : ""}${mixed ? "*" : ""}` : "första året i serien"}
+              </span>
+            </div>
+          );
+        })}
+        {extra?.(i) && <div className="ib-extra">{extra(i)}</div>}
+      </div>
+    );
+  }
+
   return (
-    <div className="chart">
+    <div className="chart" onClick={() => setPinnedYear(null)}>
       {grid.map((g) => (
         <div key={g.top} className="gridline" style={{ top: g.top }}>
           <span>{g.label}</span>
@@ -272,12 +340,14 @@ function LineChart({ series, years, year, nominal, paper, onSelectYear, infoFor,
       {series.map((s) =>
         s.points.map((p, i) => {
           const selected = p.y === year;
+          const active = p.y === shown;
           return (
             <button
               key={`${s.key}-${p.y}`}
               type="button"
-              className={`dot${below(s, i) ? " below" : ""}`}
-              title={`${s.label ? `${s.label} ` : ""}${p.y}: ${fmd(p.v)}`}
+              className={`dot${below(s, i) ? " below" : ""}${active ? " active" : ""}`}
+              aria-label={`${s.label ? `${s.label} ` : ""}${p.y}: ${ftkr(p.v)}`}
+              aria-pressed={pinnedYear === p.y}
               style={{
                 left: `${X(i, n)}%`,
                 top: `${Y(p.v)}%`,
@@ -285,11 +355,7 @@ function LineChart({ series, years, year, nominal, paper, onSelectYear, infoFor,
                 transform: `translate(-50%,-50%) scale(${open ? 1 : 0})`,
                 transitionDelay: open ? `${(0.25 + (i / Math.max(1, n - 1)) * 0.6).toFixed(2)}s` : "0s",
               }}
-              onClick={() => onSelectYear(p.y)}
-              onMouseEnter={() => hover(p.y)}
-              onMouseLeave={() => onHover(null)}
-              onFocus={() => hover(p.y)}
-              onBlur={() => onHover(null)}
+              {...handlers(p.y)}
             >
               <span className="val">{fmd(p.v)}</span>
               <span className="mark" style={{ width: selected ? 16 : 12, height: selected ? 16 : 12, background: selected ? "currentColor" : paper }} />
@@ -304,16 +370,16 @@ function LineChart({ series, years, year, nominal, paper, onSelectYear, infoFor,
             key={y}
             type="button"
             className="year"
-            style={{ left: `${X(i, n)}%`, fontWeight: selected ? 700 : 500, opacity: selected ? 1 : 0.7 }}
-            onClick={() => onSelectYear(y)}
-            onMouseEnter={() => hover(y)}
-            onMouseLeave={() => onHover(null)}
+            aria-pressed={pinnedYear === y}
+            style={{ left: `${X(i, n)}%`, fontWeight: selected ? 700 : 500, opacity: selected || y === shown ? 1 : 0.7 }}
+            {...handlers(y)}
           >
             {y}
             {nominal(y) ? "*" : ""}
           </button>
         );
       })}
+      {box}
     </div>
   );
 }
@@ -334,8 +400,6 @@ type OverviewProps = Prices & {
   years: number[];
   budgets: Record<number, BudgetJson>;
   year: number;
-  onSelectYear: (y: number) => void;
-  onHover: (info: Info | null) => void;
 };
 
 const SIDES = [
@@ -343,7 +407,7 @@ const SIDES = [
   { k: "rev", label: "Inkomster", color: "var(--revenue)" },
 ] as const;
 
-function Overview({ years, budgets, year, factorOf, nominal, priceNote, nominalNote, onSelectYear, onHover }: OverviewProps) {
+function Overview({ years, budgets, year, factorOf, nominal, priceNote, nominalNote }: OverviewProps) {
   const totals = years.map((y) => {
     const b = budgets[y];
     const f = factorOf(y);
@@ -351,15 +415,6 @@ function Overview({ years, budgets, year, factorOf, nominal, priceNote, nominalN
   });
   const sel = totals.find((t) => t.y === year) ?? totals[totals.length - 1]!;
   const saldo = sel.rev - sel.exp;
-  const infoFor = (y: number): Info => {
-    const t = totals.find((x) => x.y === y) ?? sel;
-    return {
-      title: `Statens budget ${t.y}${nominal(t.y) ? "*" : ""}`,
-      value: `Saldo ${signed(t.rev - t.exp)}`,
-      share: `Utgifter ${fmd(t.exp)} · Inkomster ${fmd(t.rev)}${priceNote}`,
-      hint: t.y === year ? "" : "Klicka för att välja år",
-    };
-  };
 
   return (
     <div className="panel overview" style={{ background: PAPER, color: INK, ["--grid-color" as string]: "rgba(11,11,11,0.12)" }}>
@@ -396,9 +451,11 @@ function Overview({ years, budgets, year, factorOf, nominal, priceNote, nominalN
           year={year}
           nominal={nominal}
           paper={PAPER}
-          onSelectYear={onSelectYear}
-          infoFor={infoFor}
-          onHover={onHover}
+          extra={(i) => {
+            const t = totals[i]!;
+            const d = t.rev - t.exp;
+            return `Saldo ${sign(d)}${ftkr(Math.abs(d))} · ${d < 0 ? "underskott" : d > 0 ? "överskott" : "balans"}`;
+          }}
         />
         <div className="note">{years.some(nominal) ? nominalNote : ""}</div>
       </div>
@@ -420,11 +477,9 @@ type FocusProps = Prices & {
   title: string;
   bg: string;
   fg: string;
-  onSelectYear: (y: number) => void;
-  onHover: (info: Info | null) => void;
 };
 
-function FocusPanel({ years, budgets, year, view, gkey, row, kicker, title, bg, fg, factorOf, nominal, priceNote, nominalNote, onSelectYear, onHover }: FocusProps) {
+function FocusPanel({ years, budgets, year, view, gkey, row, kicker, title, bg, fg, factorOf, nominal, priceNote, nominalNote }: FocusProps) {
   const points = years.map((y) => {
     const b = budgets[y];
     const g = b ? normalize(b, view, factorOf(y)).find((x) => x.key === gkey) : undefined;
@@ -434,10 +489,6 @@ function FocusPanel({ years, budgets, year, view, gkey, row, kicker, title, bg, 
   });
   const { first, last, pct } = changeOver(points, nominal);
   const dark = fg !== INK;
-  const infoFor = (y: number): Info => {
-    const p = points.find((x) => x.y === y)!;
-    return { title: `${title} ${y}${nominal(y) ? "*" : ""}`, value: fmd(p.v), share: priceNote.replace(/^ · /, ""), hint: y === year ? "" : "Klicka för att välja år" };
-  };
 
   return (
     <div className="panel focus" style={{ background: bg, color: fg, ["--grid-color" as string]: dark ? "rgba(255,255,255,0.22)" : "rgba(11,11,11,0.12)" }}>
@@ -471,9 +522,6 @@ function FocusPanel({ years, budgets, year, view, gkey, row, kicker, title, bg, 
           year={year}
           nominal={nominal}
           paper={bg}
-          onSelectYear={onSelectYear}
-          infoFor={infoFor}
-          onHover={onHover}
         />
       </div>
     </div>
@@ -845,7 +893,7 @@ function App() {
           title: `Statens budget ${year}${year != null && nominal(year) ? "*" : ""}`,
           value: `Saldo ${signed(B.revenuesTotal * f - B.expensesTotal * f)}`,
           share: `Utgifter ${fmd(B.expensesTotal * f)} · Inkomster ${fmd(B.revenuesTotal * f)}${priceNote}`,
-          hint: year != null && nominal(year) ? nominalNote : "Välj Utgifter eller Inkomster för att utforska",
+          hint: year != null && nominal(year) ? nominalNote : "Hovra över ett år för exakta siffror",
         }
       : group
         ? {
@@ -990,7 +1038,7 @@ function App() {
 
       <div className="stage">
         {overview && B && year != null && (
-          <Overview years={yrs} budgets={budgets} year={year} {...prices} onSelectYear={selectYear} onHover={setHover} />
+          <Overview years={yrs} budgets={budgets} year={year} {...prices} />
         )}
 
         {!overview && group && year != null && multiYear && (
@@ -1006,8 +1054,6 @@ function App() {
             bg={panelColor.bg}
             fg={panelColor.fg}
             {...prices}
-            onSelectYear={selectYear}
-            onHover={setHover}
           />
         )}
 

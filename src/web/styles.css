@@ -524,6 +524,81 @@ button {
 .panel .year:focus-visible {
   opacity: 1 !important;
 }
+.panel .dot.active .mark {
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.6);
+}
+
+/* Info box: exact figures for a hovered or pinned year */
+.panel .infobox {
+  --box-h: 76px;
+  position: absolute;
+  z-index: 2;
+  min-width: 220px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.14);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.panel .infobox.multi {
+  --box-h: 112px;
+}
+.panel .infobox.pinned {
+  box-shadow:
+    0 0 0 2px var(--ink),
+    0 10px 40px rgba(0, 0, 0, 0.14);
+}
+.panel .infobox .ib-year {
+  font-size: 12px;
+  font-weight: 700;
+}
+.panel .infobox .ib-vs {
+  font-weight: 500;
+  color: var(--muted);
+}
+.panel .infobox .ib-row {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 12px;
+  align-items: baseline;
+}
+.panel .infobox.multi .ib-row {
+  grid-template-columns: 88px auto 1fr;
+}
+.panel .infobox .ib-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  color: var(--secondary);
+}
+.panel .infobox .swatch {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+}
+.panel .infobox .ib-val {
+  font-weight: 700;
+  white-space: nowrap;
+}
+.panel .infobox .ib-diff {
+  color: var(--secondary);
+  white-space: nowrap;
+  text-align: right;
+}
+.panel .infobox .ib-extra {
+  margin-top: 2px;
+  padding-top: 6px;
+  border-top: 1px solid var(--divider);
+  font-weight: 600;
+}
+
 .panel .note {
   height: 16px;
   font-size: 12px;
