@@ -1443,7 +1443,6 @@ function App() {
                 <span className="now">
                   {year}
                   {nominal(year) ? "*" : ""}, i {UNITS.find((u) => u.k === unit)?.label}
-                  {real ? `, ${baseYear} års priser` : ""}
                 </span>
               )}
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
