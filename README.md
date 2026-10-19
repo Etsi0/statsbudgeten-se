@@ -12,11 +12,14 @@ To convert the official xlsx files in `examples/` to JSON in `data/`:
 bun run convert
 ```
 
-To start the web interface (charts over the budget data) on http://localhost:3000:
+To start the web interface (a click-to-drill treemap over the budget data) on http://localhost:3000:
 
 ```bash
 bun run web
 ```
+
+The server lists every `data/YYYY.json` it finds. With more than one year present, the
+year picker lets you switch budget year and every area/item gets a history line chart.
 
 ## Deploying to Fly.io
 

@@ -7,12 +7,12 @@ import index from "./web/index.html";
 
 const root = new URL("..", import.meta.url).pathname;
 
-function listYears(): string[] {
-  return [...new Bun.Glob("data/*.json").scanSync(root)]
-    .map((p) => p.match(/(\d{4})\.json$/)?.[1])
-    .filter((y): y is string => !!y)
-    .sort()
-    .reverse();
+/** Years that have a data/<year>.json file, newest first. */
+function listYears(): number[] {
+  return [...new Bun.Glob("data/[0-9][0-9][0-9][0-9].json").scanSync(root)]
+    .map((p) => Number(p.match(/(\d{4})\.json$/)?.[1]))
+    .filter((y) => Number.isFinite(y))
+    .sort((a, b) => b - a);
 }
 
 const server = Bun.serve({
@@ -25,7 +25,9 @@ const server = Bun.serve({
       if (!/^\d{4}$/.test(year)) return new Response("Bad year", { status: 400 });
       const file = Bun.file(`${root}data/${year}.json`);
       if (!(await file.exists())) return new Response("Not found", { status: 404 });
-      return new Response(file, { headers: { "content-type": "application/json" } });
+      return new Response(file, {
+        headers: { "content-type": "application/json", "cache-control": "public, max-age=3600" },
+      });
     },
   },
   development: process.env.NODE_ENV !== "production" && {

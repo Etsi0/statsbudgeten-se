@@ -6,3 +6,7 @@ Dockerfile
 coverage
 *.tsbuildinfo
 .DS_Store
+
+design
+design.zip
+examples
