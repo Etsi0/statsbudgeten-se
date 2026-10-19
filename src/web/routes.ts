@@ -3,6 +3,7 @@
  *
  *   /                            overview: inkomster vs utgifter per year
  *   /om                          about page
+ *   /sok?q=försvar               search page, with the query
  *   /utgifter                    treemap of all utgiftsområden (/inkomster: inkomsttyper)
  *   /utgifter/6                  utgiftsområde 6: its history graph above its anslag
  *   /utgifter/6/3                …with anslag 3 focused (the graph shows that anslag)
@@ -14,7 +15,7 @@
  */
 
 export type View = "exp" | "rev";
-export type Mode = "overview" | "explore" | "about";
+export type Mode = "overview" | "explore" | "about" | "search";
 
 export type Route = {
   mode: Mode;
@@ -27,6 +28,8 @@ export type Route = {
   /** Focused row id within the group. */
   item: number | null;
   real: boolean;
+  /** Search query; only meaningful in search mode. */
+  q: string;
 };
 
 const VIEW_SLUG: Record<View, string> = { exp: "utgifter", rev: "inkomster" };
@@ -39,24 +42,27 @@ export function parseRoute(url: URL): Route {
   const parts = url.pathname.split("/").filter(Boolean);
   const real = url.searchParams.get("inflation") === "1";
   const year = parseYear(url.searchParams.get("year"));
-  if (parts[0] === "om") return { mode: "about", view: "exp", year, group: null, rest: false, item: null, real };
+  const none = { group: null, rest: false, item: null, real, q: "" };
+  if (parts[0] === "om") return { mode: "about", view: "exp", year, ...none };
+  if (parts[0] === "sok") return { mode: "search", view: "exp", year, ...none, q: url.searchParams.get("q")?.trim() ?? "" };
   const view = SLUG_VIEW[parts[0] ?? ""];
-  if (!view) return { mode: "overview", view: "exp", year, group: null, rest: false, item: null, real };
+  if (!view) return { mode: "overview", view: "exp", year, ...none };
   const group = parseNat(parts[1]);
-  if (group == null) return { mode: "explore", view, year, group: null, rest: false, item: null, real };
+  if (group == null) return { mode: "explore", view, year, ...none };
   let i = 2;
   let rest = false;
   if (parts[i] === "ovriga") {
     rest = true;
     i++;
   }
-  return { mode: "explore", view, year, group, rest, item: parseNat(parts[i]), real };
+  return { mode: "explore", view, year, group, rest, item: parseNat(parts[i]), real, q: "" };
 }
 
 /** Path + query for a route. `latest` lets the URL omit the default year. */
 export function buildUrl(r: Route, latest: number | null): string {
   let path = "/";
   if (r.mode === "about") path = "/om";
+  if (r.mode === "search") path = "/sok";
   if (r.mode === "explore") {
     const parts = [VIEW_SLUG[r.view]];
     if (r.group != null) {
@@ -67,6 +73,7 @@ export function buildUrl(r: Route, latest: number | null): string {
     path = `/${parts.join("/")}`;
   }
   const q = new URLSearchParams();
+  if (r.mode === "search" && r.q) q.set("q", r.q);
   if (r.year != null && r.year !== latest) q.set("year", String(r.year));
   if (r.real) q.set("inflation", "1");
   const s = q.toString();

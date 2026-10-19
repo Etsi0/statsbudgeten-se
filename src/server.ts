@@ -43,6 +43,7 @@ const server = Bun.serve({
     "/inkomster": index,
     "/inkomster/*": index,
     "/om": index,
+    "/sok": index,
     "/api/sources": () => Response.json(listSources()),
     "/examples/:file": async (req) => {
       const { file } = req.params;

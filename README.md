@@ -34,6 +34,7 @@ The URL mirrors what is on screen (`src/web/routes.ts`):
 |---|---|
 | `/` | Overview: inkomster vs utgifter per year |
 | `/om` | About page, written in `content/om.md` and converted to JSON at build time by a Bun macro |
+| `/sok?q=försvar` | Search over areas and postings in the selected year; a hit navigates to its page |
 | `/utgifter`, `/inkomster` | Treemap of all utgiftsområden / inkomsttyper |
 | `/utgifter/6` | Utgiftsområde 6: its history graph above the treemap of its anslag |
 | `/utgifter/6/3` | …with anslag 3 focused, so the graph shows that anslag |

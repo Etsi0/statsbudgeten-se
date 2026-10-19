@@ -14,6 +14,7 @@ import { chooseBaseYear, inflationFactors } from "../inflation";
 import { initAnalytics, trackEvent, trackPageView } from "./analytics";
 import { aboutContent } from "./content.macro" with { type: "macro" };
 import type { Block, Inline } from "../markdown";
+import { buildIndex, search as runSearch, type SearchHit } from "../search";
 import { buildUrl, groupKey, groupNumber, parseRoute, type Mode, type View } from "./routes";
 import "./styles.css";
 
@@ -699,6 +700,100 @@ function About() {
   );
 }
 
+// ---- Search page ---------------------------------------------------------------
+
+type SearchProps = {
+  budget: BudgetJson | undefined;
+  year: number | null;
+  q: string;
+  onChange: (q: string) => void;
+  onPick: (hit: SearchHit) => void;
+};
+
+function Search({ budget, year, q, onChange, onPick }: SearchProps) {
+  const index = useMemo(() => (budget ? buildIndex(budget) : []), [budget]);
+  const hits = useMemo(() => runSearch(index, q), [index, q]);
+  const [active, setActive] = useState(0);
+  const inputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => setActive(0), [q]);
+  useEffect(() => inputRef.current?.focus(), []);
+  const postings = index.filter((h) => h.id != null).length;
+  const groups = index.length - postings;
+
+  const onKey = (e: React.KeyboardEvent) => {
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setActive((a) => Math.min(hits.length - 1, a + 1));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setActive((a) => Math.max(0, a - 1));
+    } else if (e.key === "Enter" && hits[active]) {
+      e.preventDefault();
+      onPick(hits[active]!);
+    }
+  };
+
+  return (
+    <div className="panel search">
+      <div className="search-head">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden>
+          <circle cx="11" cy="11" r="7" />
+          <path d="M20 20l-3.5-3.5" />
+        </svg>
+        <input
+          ref={inputRef}
+          type="search"
+          value={q}
+          placeholder="Sök anslag, inkomsttitel eller område …"
+          aria-label="Sök"
+          autoComplete="off"
+          onChange={(e) => onChange(e.target.value)}
+          onKeyDown={onKey}
+        />
+        {q && (
+          <button type="button" className="icon-btn" aria-label="Rensa sökningen" onClick={() => { onChange(""); inputRef.current?.focus(); }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden>
+              <path d="M6 6l12 12M18 6L6 18" />
+            </svg>
+          </button>
+        )}
+      </div>
+      {q.trim() === "" ? (
+        <p className="search-hint">
+          {budget ? `Sök bland ${NF0.format(groups)} områden och ${NF0.format(postings)} poster i budgeten för ${year}.` : "Läser in …"}
+        </p>
+      ) : hits.length === 0 ? (
+        <p className="search-hint">Inga träffar för ”{q.trim()}”.</p>
+      ) : (
+        <div className="results" role="listbox" aria-label="Sökträffar">
+          {hits.map((h, i) => (
+            <button
+              key={`${h.gkey}/${h.id ?? ""}`}
+              type="button"
+              role="option"
+              aria-selected={i === active}
+              className={`result${i === active ? " active" : ""}`}
+              onMouseEnter={() => setActive(i)}
+              onClick={() => onPick(h)}
+            >
+              <span className="swatch" style={{ background: h.view === "rev" ? "var(--revenue)" : "var(--expense)" }} />
+              <span className="r-main">
+                <span className="r-title">{h.title}</span>
+                <span className="r-sub">
+                  {h.id == null
+                    ? h.view === "rev" ? "Inkomsttyp" : "Utgiftsområde"
+                    : `${h.groupCode} · ${h.groupTitle} · ${h.view === "rev" ? "Inkomsttitel" : "Anslag"} ${h.id}${h.rest ? " · Övriga" : ""}`}
+                </span>
+              </span>
+              <span className="r-val">{fmd(h.v)}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ---- App ----------------------------------------------------------------------
 
 const initialRoute = parseRoute(new URL(window.location.href));
@@ -715,6 +810,7 @@ function App() {
   const [itemKey, setItemKey] = useState<string | null>(null);
   const [pendingItem, setPendingItem] = useState<number | null>(initialRoute.item);
   const [realWanted, setReal] = useState(initialRoute.real);
+  const [q, setQ] = useState(initialRoute.q);
   const [hover, setHover] = useState<Info | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   /** Key of a too-small tile that has been expanded in place, see `readable`. */
@@ -785,6 +881,7 @@ function App() {
     setItemKey(null);
     setPendingItem(r.item);
     setReal(r.real);
+    setQ(r.q);
     setHover(null);
   };
 
@@ -802,6 +899,7 @@ function App() {
       if (menuOpen) return setMenuOpen(false);
       if (zoomKey != null) return setZoomKey(null);
       if (mode === "about") return showOverview();
+      if (mode === "search") return q ? setQ("") : showOverview();
       if (itemKey != null || pendingItem != null) {
         setItemKey(null);
         setPendingItem(null);
@@ -811,7 +909,7 @@ function App() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [menuOpen, zoomKey, mode, itemKey, pendingItem, rest]);
+  }, [menuOpen, zoomKey, mode, q, itemKey, pendingItem, rest]);
   // A zoomed tile belongs to one level; leave it when the level changes.
   useEffect(() => setZoomKey(null), [mode, view, year, uo, rest]);
 
@@ -833,6 +931,26 @@ function App() {
     setUo(null);
     setRest(false);
     clearFocus();
+    setHover(null);
+  };
+
+  const showSearch = () => {
+    setMode("search");
+    setUo(null);
+    setRest(false);
+    clearFocus();
+    setHover(null);
+  };
+
+  /** Open the page a search hit points at. */
+  const pickHit = (h: SearchHit) => {
+    trackEvent("search_pick", { query: q, view: h.view, group: h.gkey, item: h.id ?? "" });
+    setMode("explore");
+    setView(h.view);
+    setUo(h.gkey);
+    setRest(h.rest);
+    setItemKey(h.key);
+    setPendingItem(null);
     setHover(null);
   };
 
@@ -912,25 +1030,33 @@ function App() {
   const pageTitle =
     mode === "about"
       ? "Om sajten"
+      : mode === "search"
+      ? q ? `Sök: ${q}` : "Sök"
       : mode === "overview"
       ? "Inkomster och utgifter"
       : year == null
         ? T.label
         : `${focusedRow ? `${focusedRow.title} · ` : ""}${group ? `${group.title}${rest ? " · Övriga" : ""}` : T.root} · ${T.label} ${year}`;
   const synced = useRef<string | null>(null);
+  const tracked = useRef<string | null>(null);
   useEffect(() => {
     if (year == null) return;
-    const url = buildUrl({ mode, view, year, group: group ? groupNumber(group.key) : null, rest, item: group ? itemId : null, real }, latest);
+    const url = buildUrl({ mode, view, year, group: group ? groupNumber(group.key) : null, rest, item: group ? itemId : null, real, q }, latest);
     const current = window.location.pathname + window.location.search;
     if (url !== current) {
-      // The first sync only normalises the URL we were opened with.
-      if (synced.current === null) window.history.replaceState(null, "", url);
+      // The first sync only normalises the URL we were opened with, and typing
+      // in the search box rewrites the entry instead of piling up history.
+      const typing = mode === "search" && synced.current?.startsWith("/sok");
+      if (synced.current === null || typing) window.history.replaceState(null, "", url);
       else window.history.pushState(null, "", url);
     }
     document.title = `${pageTitle} – Statsbudgeten`;
-    if (synced.current !== url) trackPageView(url, pageTitle);
+    // One page view per page, not per keystroke.
+    const page = url.replace(/([?&])q=[^&]*&?/, "$1").replace(/[?&]$/, "");
+    if (tracked.current !== page) trackPageView(page, mode === "search" ? "Sök" : pageTitle);
+    tracked.current = page;
     synced.current = url;
-  }, [mode, view, year, group, rest, itemId, real, latest, pageTitle]);
+  }, [mode, view, year, group, rest, itemId, real, q, latest, pageTitle]);
 
   // Items at the current drill level.
   let items: Item[] = [];
@@ -1009,6 +1135,8 @@ function App() {
 
   const base: Info = mode === "about"
     ? { title: "Om Statsbudgeten", hint: "Esc eller Översikt för att gå tillbaka" }
+    : mode === "search"
+    ? { title: `Sök i budgeten ${year ?? ""}`, hint: q ? "Pil upp/ner och Enter väljer · Esc rensar" : "Skriv för att söka" }
     : !B
     ? { title: error ? "Kunde inte läsa data" : "Läser in …" }
     : mode === "overview"
@@ -1034,6 +1162,7 @@ function App() {
   const info = hover ?? base;
   const overview = mode === "overview";
   const about = mode === "about";
+  const searching = mode === "search";
 
   return (
     <div className="app" lang="sv">
@@ -1083,7 +1212,7 @@ function App() {
               ["rev", "var(--revenue)", B ? B.revenuesTotal * f : undefined],
             ] as const
           ).map(([k, dot, tot]) => {
-            const active = !overview && !about && view === k;
+            const active = !overview && !about && !searching && view === k;
             return (
               <button key={k} type="button" className={`tab${active ? " active" : ""}`} aria-current={active ? "page" : undefined} onClick={() => showGraph(k)}>
                 <span className="dot" style={{ background: dot }} />
@@ -1092,6 +1221,13 @@ function App() {
               </button>
             );
           })}
+          <button type="button" className={`tab${searching ? " active" : ""}`} aria-current={searching ? "page" : undefined} onClick={showSearch}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden>
+              <circle cx="11" cy="11" r="7" />
+              <path d="M20 20l-3.5-3.5" />
+            </svg>
+            <span>Sök</span>
+          </button>
           <button type="button" className={`tab${about ? " active" : ""}`} aria-current={about ? "page" : undefined} onClick={showAbout}>
             <span>Om</span>
           </button>
@@ -1143,6 +1279,12 @@ function App() {
             <span className="crumb">
               <button type="button" className="current" disabled>
                 Om sajten
+              </button>
+            </span>
+          ) : searching ? (
+            <span className="crumb">
+              <button type="button" className="current" disabled>
+                Sök
               </button>
             </span>
           ) : overview ? (
@@ -1206,12 +1348,13 @@ function App() {
 
       <div className="stage">
         {about && <About />}
+        {searching && <Search budget={B} year={year} q={q} onChange={setQ} onPick={pickHit} />}
 
         {overview && B && year != null && (
           <Overview years={yrs} budgets={budgets} year={year} {...prices} />
         )}
 
-        {!overview && !about && group && year != null && multiYear && (
+        {!overview && !about && !searching && group && year != null && multiYear && (
           <FocusPanel
             years={yrs}
             budgets={budgets}
@@ -1227,7 +1370,7 @@ function App() {
           />
         )}
 
-        {!overview && !about && (
+        {!overview && !about && !searching && (
           <div className="map" ref={mapRef} onClick={() => setZoomKey(null)}>
             {rects.map(({ it, x: x0, y: y0, w: w0, h: h0 }) => {
               const { bg, fg } = colorOf(it, !!group);
