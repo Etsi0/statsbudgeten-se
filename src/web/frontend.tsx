@@ -345,7 +345,7 @@ function LineChart({ series, years, year, nominal, paper, extra }: LineChartProp
             <button
               key={`${s.key}-${p.y}`}
               type="button"
-              className={`dot${below(s, i) ? " below" : ""}${active ? " active" : ""}`}
+              className={`dot${below(s, i) ? " below" : ""}${active ? " active" : ""}${selected ? " selected" : ""}`}
               aria-label={`${s.label ? `${s.label} ` : ""}${p.y}: ${ftkr(p.v)}`}
               aria-pressed={pinnedYear === p.y}
               style={{
@@ -613,6 +613,7 @@ function App() {
   const [pendingItem, setPendingItem] = useState<number | null>(initialRoute.item);
   const [realWanted, setReal] = useState(initialRoute.real);
   const [hover, setHover] = useState<Info | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
   const [rates, setRates] = useState<Record<string, number>>({});
   const [size, setSize] = useState({ W: 1000, H: 600 });
   const [error, setError] = useState(false);
@@ -693,6 +694,7 @@ function App() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
+      if (menuOpen) return setMenuOpen(false);
       if (itemKey != null || pendingItem != null) {
         setItemKey(null);
         setPendingItem(null);
@@ -702,7 +704,7 @@ function App() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [itemKey, pendingItem, rest]);
+  }, [menuOpen, itemKey, pendingItem, rest]);
 
   const clearFocus = () => {
     setItemKey(null);
@@ -913,8 +915,34 @@ function App() {
 
   return (
     <div className="app" lang="sv">
-      <div className="menu">
+      <div className={`menu${menuOpen ? " open" : ""}`}>
         <span className="brand">Statsbudgeten</span>
+        <button
+          type="button"
+          className="menu-toggle"
+          aria-expanded={menuOpen}
+          aria-controls="menu-items"
+          aria-label={menuOpen ? "Stäng menyn" : "Öppna menyn"}
+          onClick={() => setMenuOpen((o) => !o)}
+        >
+          {year != null && (
+            <span className="now">
+              {year}
+              {nominal(year) ? "*" : ""}
+            </span>
+          )}
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden>
+            {menuOpen ? <path d="M6 6l12 12M18 6L6 18" /> : <path d="M4 7h16M4 12h16M4 17h16" />}
+          </svg>
+        </button>
+        <div
+          className="menu-items"
+          id="menu-items"
+          onClick={(e) => {
+            // On mobile the menu is a dropdown: any choice closes it.
+            if ((e.target as HTMLElement).closest("button")) setMenuOpen(false);
+          }}
+        >
         <nav className="tabs" aria-label="Vy">
           <button type="button" className={`tab${overview ? " active" : ""}`} aria-current={overview ? "page" : undefined} onClick={showOverview}>
             <span>Översikt</span>
@@ -972,6 +1000,7 @@ function App() {
               </button>
             ))}
           </div>
+        </div>
         </div>
       </div>
 

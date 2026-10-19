@@ -47,6 +47,7 @@ button {
 
 .app {
   height: 100vh;
+  height: 100dvh;
   min-height: 640px;
   display: flex;
   flex-direction: column;
@@ -57,12 +58,34 @@ button {
 /* ---- Top menu row ---- */
 
 .menu {
+  position: relative;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 10px 24px;
   padding-bottom: 12px;
   border-bottom: 1px solid var(--divider);
+}
+/* On desktop the items sit directly in the bar; on mobile they become a dropdown. */
+.menu-items {
+  display: contents;
+}
+.menu-toggle {
+  display: none;
+  margin-left: auto;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px 6px 12px;
+  border: 0;
+  border-radius: 9px;
+  background: var(--track);
+  cursor: pointer;
+}
+.menu-toggle .now {
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--secondary);
 }
 
 .brand {
@@ -634,4 +657,139 @@ button {
 }
 .info .hint {
   color: var(--muted);
+}
+
+/* ---- Mobile ---- */
+
+@media (max-width: 720px) {
+  .app {
+    min-height: 0;
+    gap: 10px;
+    padding: 10px 0 8px;
+  }
+  .menu,
+  .crumb-row,
+  .info {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+  .menu {
+    gap: 10px;
+    padding-bottom: 10px;
+  }
+  .menu-toggle {
+    display: flex;
+  }
+  .menu-items {
+    display: none;
+    position: absolute;
+    top: calc(100% + 1px);
+    left: 8px;
+    right: 8px;
+    z-index: 20;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 14px;
+    padding: 14px;
+    border-radius: 12px;
+    background: var(--surface);
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.16);
+  }
+  .menu.open .menu-items {
+    display: flex;
+  }
+  .menu-items .tabs {
+    flex-wrap: wrap;
+    margin-right: 0;
+  }
+  .menu-items .switch {
+    align-self: flex-start;
+  }
+  .menu-items .year-picker {
+    flex-wrap: wrap;
+  }
+  .seg {
+    flex-wrap: wrap;
+  }
+  .crumb button,
+  .crumb .sep {
+    font-size: 19px;
+  }
+  .stage {
+    gap: 10px;
+  }
+  /* Boxes go full-bleed: no side padding, no side rounding. */
+  .map,
+  .panel {
+    border-radius: 0;
+    border-left: 0;
+    border-right: 0;
+  }
+  .tile {
+    border-radius: 8px;
+  }
+  .panel .content {
+    padding: 14px 16px 12px;
+    gap: 10px;
+  }
+  .panel.focus .content {
+    padding: 12px 14px 10px;
+  }
+  .panel.focus {
+    height: clamp(200px, 32vh, 300px);
+  }
+  .panel .name {
+    font-size: 20px;
+  }
+  .panel.focus .name {
+    font-size: 17px;
+  }
+  .panel .delta .pct {
+    font-size: 20px;
+  }
+  .panel.focus .delta .pct {
+    font-size: 17px;
+  }
+  .panel .chart {
+    margin: 20px 28px 26px 40px;
+  }
+  .panel.focus .name {
+    white-space: normal;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  /* Two series don't leave room for every value label on a phone. */
+  .panel.overview .dot:not(.selected) .val {
+    display: none;
+  }
+  /* The info box becomes a sheet at the bottom of the screen. */
+  .panel .infobox {
+    position: fixed;
+    left: 12px !important;
+    right: 12px !important;
+    top: auto !important;
+    bottom: 12px;
+    min-width: 0;
+    padding: 12px 14px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.24);
+  }
+  .panel .infobox.pinned {
+    box-shadow:
+      0 0 0 2px var(--ink),
+      0 10px 40px rgba(0, 0, 0, 0.24);
+  }
+  .panel .infobox.multi .ib-row {
+    grid-template-columns: 1fr;
+    row-gap: 0;
+    margin-bottom: 4px;
+  }
+  .panel .infobox .ib-diff {
+    text-align: left;
+  }
+  .info {
+    gap: 2px 12px;
+    font-size: 13px;
+  }
 }
