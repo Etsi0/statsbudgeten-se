@@ -28,12 +28,25 @@ bun run web
 The server lists every `data/YYYY.json` it finds. With more than one year present, the
 year picker lets you switch budget year and every area/item gets a history line chart.
 
+The URL mirrors what is on screen (`src/web/routes.ts`):
+
+| URL | View |
+|---|---|
+| `/` | Overview: inkomster vs utgifter per year |
+| `/utgifter`, `/inkomster` | Treemap of all utgiftsområden / inkomsttyper |
+| `/utgifter/6` | Utgiftsområde 6: its history graph above the treemap of its anslag |
+| `/utgifter/6/3` | …with anslag 3 focused, so the graph shows that anslag |
+| `/utgifter/6/ovriga`, `/utgifter/6/ovriga/23` | The "Övriga" bundle of the group, optionally with a focused anslag |
+| `/inkomster/1000/1111` | Inkomsttyp 1000 with inkomsttitel 1111 focused |
+| `…?year=2024` | Budget year (omitted for the latest year) |
+| `…?inflation=1` | Amounts adjusted for inflation |
+
 ## Analytics
 
 Google Analytics is wired up in `src/web/analytics.ts` (measurement ID at the
-top of the file). It is not loaded on localhost. Since the app is a single page,
-each drill state (tab, year, area, Övriga) is reported as a virtual page view,
-and opening a history chart or flipping the inflation toggle are events.
+top of the file). It is not loaded on localhost. The app keeps the URL in step
+with what is on screen without page loads, so each URL change is reported as a
+page view, and flipping the inflation toggle is an event.
 
 ## Deploying to Fly.io
 

@@ -20,6 +20,11 @@ const server = Bun.serve({
   port: Number(process.env.PORT ?? 3000),
   routes: {
     "/": index,
+    // The app owns these paths; they mirror the drill state (src/web/routes.ts).
+    "/utgifter": index,
+    "/utgifter/*": index,
+    "/inkomster": index,
+    "/inkomster/*": index,
     "/api/years": () => Response.json(listYears()),
     "/api/inflation": async () => {
       const file = Bun.file(`${root}data/inflation.json`);

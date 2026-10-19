@@ -1,10 +1,10 @@
 /**
  * Google Analytics (gtag.js) for the single-page app.
  *
- * The app has no router: what the user is looking at is React state (tab,
- * year, drilled area, Övriga). So the automatic page view is disabled and the
- * app reports each of those states as a virtual page view instead, plus a few
- * events for interactions that don't change the "page".
+ * The app is a single page whose URL the app itself keeps in step with what
+ * is on screen (see routes.ts), without full page loads. So the automatic
+ * page view is disabled and the app reports each URL change as a page view
+ * instead, plus an event for the inflation toggle.
  *
  * Nothing is loaded on localhost, so development sessions never reach GA.
  */
@@ -44,7 +44,7 @@ export function initAnalytics(): void {
   enabled = true;
 }
 
-/** Reports a virtual page, e.g. "/utgifter/2026/uo6". */
+/** Reports a page, e.g. "/utgifter/6/3?year=2024". */
 export function trackPageView(path: string, title: string): void {
   if (!enabled) return;
   window.gtag!("event", "page_view", {

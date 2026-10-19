@@ -1,13 +1,18 @@
 /**
- * Statsbudgeten – a full-screen, click-to-drill treemap over the Swedish state
- * budget. Port of the design reference in design/Statsbudgeten v2.dc.html.
+ * Statsbudgeten – the Swedish state budget as an overview chart (/) and a
+ * click-to-drill treemap (/utgifter, /inkomster). Inside a group the page
+ * shows the group's history graph with the treemap of its postings below;
+ * clicking a posting focuses it, and the graph follows. The URL mirrors what
+ * is on screen, see routes.ts. The treemap is a port of the design reference
+ * in design/Statsbudgeten v2.dc.html.
  */
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { BudgetJsonSchema, type BudgetJson } from "../../types/BudgetJsonSchema";
 import { InflationSchema } from "../../types/InflationSchema";
 import { chooseBaseYear, inflationFactors } from "../inflation";
 import { initAnalytics, trackEvent, trackPageView } from "./analytics";
+import { buildUrl, groupKey, groupNumber, parseRoute, type Mode, type View } from "./routes";
 import "./styles.css";
 
 // ---- Design-only tweaks (constants in production) ----------------------------
@@ -34,10 +39,10 @@ const fmd = (tkr: number) => {
   return `${NF0.format(tkr / 1e3)} mnkr`;
 };
 const fpct = (p: number) => `${p >= 10 ? NF0.format(p) : p >= 0.1 ? NF1.format(p) : "<0,1"} %`;
+const signed = (v: number) => (v > 0 ? "+" : v < 0 ? "−" : "±") + fmd(Math.abs(v));
 
 // ---- Data model ---------------------------------------------------------------
 
-type View = "exp" | "rev";
 type NormRow = { key: string; id: number; title: string; v: number };
 type NormGroup = { key: string; code: string; title: string; total: number; rows: NormRow[] };
 
@@ -65,6 +70,7 @@ function normalize(b: BudgetJson, view: View, f = 1): NormGroup[] {
 
 const COPY = {
   exp: {
+    label: "Utgifter",
     item: "Anslag",
     items: "anslag",
     areas: "utgiftsområden",
@@ -75,6 +81,7 @@ const COPY = {
     heading: "Statens utgifter",
   },
   rev: {
+    label: "Inkomster",
     item: "Inkomsttitel",
     items: "inkomsttitlar",
     areas: "inkomsttyper",
@@ -138,12 +145,20 @@ function squarify<T>(items: { it: T; a: number }[], W: number, H: number): Place
 // ---- Shared types -------------------------------------------------------------
 
 type Info = { title: string; value?: string; share?: string; hint?: string };
-type Rect = { left: string; top: string; width: string; height: string };
-type HistRef = { view: View; gkey: string; row: string | null; kicker: string };
-type Hist = HistRef & Rect & { title: string; bg: string; fg: string };
+
+/** Price-level helpers passed down to the charts. */
+type Prices = {
+  /** Factor per year (1 when showing nominal amounts). */
+  factorOf: (y: number) => number;
+  /** True when a year is shown nominal because inflation data is missing. */
+  nominal: (y: number) => boolean;
+  priceNote: string;
+  nominalNote: string;
+};
 
 type Item = {
   key: string;
+  id: number | null;
   code: string;
   label: string;
   v: number;
@@ -152,30 +167,324 @@ type Item = {
   rank: number;
   drill?: boolean;
   rest?: boolean;
-  histRef?: HistRef;
   onClick?: () => void;
 };
 
-// ---- Icons --------------------------------------------------------------------
+/** Tile colour per the design: hue by group, lightness by rank. */
+function colorOf(it: Item, drilled: boolean): { bg: string; fg: string } {
+  let L: number, C: number;
+  if (COLOR_MODE === "färg") {
+    L = it.rest ? 0.9 : drilled ? 0.62 + it.rank * 0.28 : 0.74 + (it.lv ?? 0) * 0.04;
+    C = it.rest ? 0.02 : drilled ? 0.13 - it.rank * 0.07 : 0.11;
+  } else {
+    L = 0.36 + Math.pow(it.rank, 0.7) * 0.54;
+    C = 0.02;
+  }
+  const hue = COLOR_MODE === "färg" ? it.hue : 260;
+  return { bg: `oklch(${L.toFixed(3)} ${C.toFixed(3)} ${hue})`, fg: L < 0.66 ? PAPER : INK };
+}
 
-const ClockIcon = ({ size = 16 }: { size?: number }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-    <circle cx="12" cy="12" r="9" />
-    <path d="M12 7v5l3 2" />
-  </svg>
-);
+// ---- Line chart (overview and group/item history) ------------------------------
 
-const CloseIcon = () => (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden>
-    <path d="M6 6l12 12M18 6L6 18" />
-  </svg>
-);
+type Point = { y: number; v: number };
+type Series = { key: string; points: Point[]; color?: string; label?: string };
+
+/** Chart x position in percent for point i of n, inset 5 %–95 %. */
+const X = (i: number, n: number) => (n === 1 ? 50 : 5 + (i / (n - 1)) * 90);
+
+/** Y axis from the data: padded, snapped to a nice step, with gridline labels in mdkr. */
+function niceScale(values: number[]) {
+  const mn = Math.min(...values);
+  const mx = Math.max(...values);
+  const pad = Math.max((mx - mn) * 0.25, mx * 0.05, 1);
+  let lo = Math.max(0, mn - pad);
+  let hi = mx + pad;
+  const raw = (hi - lo) / 4;
+  const mag = Math.pow(10, Math.floor(Math.log10(raw)));
+  const step = [1, 2, 2.5, 5, 10].map((m) => m * mag).find((s) => s >= raw) ?? mag * 10;
+  lo = Math.floor(lo / step) * step;
+  hi = Math.ceil(hi / step) * step;
+  const Y = (v: number) => 100 - ((v - lo) / (hi - lo || 1)) * 100;
+  const grid: { top: string; label: string }[] = [];
+  for (let v = lo; v <= hi + step / 2; v += step) {
+    grid.push({ top: `${Y(v)}%`, label: (step >= 1e6 ? NF0 : NF1).format(v / 1e6) });
+  }
+  return { Y, grid };
+}
+
+/** True one frame after mount, to drive the enter transitions. */
+function useRevealed() {
+  const [on, setOn] = useState(false);
+  useEffect(() => {
+    let inner = 0;
+    const outer = requestAnimationFrame(() => {
+      inner = requestAnimationFrame(() => setOn(true));
+    });
+    return () => {
+      cancelAnimationFrame(outer);
+      cancelAnimationFrame(inner);
+    };
+  }, []);
+  return on;
+}
+
+type LineChartProps = {
+  series: Series[];
+  years: number[];
+  year: number;
+  nominal: (y: number) => boolean;
+  /** Fill for unselected dots, i.e. the panel background. */
+  paper: string;
+  onSelectYear: (y: number) => void;
+  infoFor?: (y: number) => Info;
+  onHover: (info: Info | null) => void;
+};
+
+function LineChart({ series, years, year, nominal, paper, onSelectYear, infoFor, onHover }: LineChartProps) {
+  const open = useRevealed();
+  const n = years.length;
+  const { Y, grid } = niceScale(series.flatMap((s) => s.points.map((p) => p.v)));
+  const pts = (s: Series) => s.points.map((p, i) => `${X(i, n).toFixed(2)},${Y(p.v).toFixed(2)}`).join(" ");
+  const selIndex = Math.max(0, years.indexOf(year));
+  const hover = (y: number) => infoFor && onHover(infoFor(y));
+  // With several series, each year's highest value is labelled above its dot
+  // and the others below, so labels never collide where the lines run close.
+  const below = (s: Series, i: number) => series.length > 1 && series.some((o) => o !== s && (o.points[i]?.v ?? -Infinity) > (s.points[i]?.v ?? -Infinity));
+
+  return (
+    <div className="chart">
+      {grid.map((g) => (
+        <div key={g.top} className="gridline" style={{ top: g.top }}>
+          <span>{g.label}</span>
+        </div>
+      ))}
+      {series.length > 1 && <div className="band" style={{ left: `${X(selIndex, n)}%` }} />}
+      <div className="reveal" style={{ clipPath: `inset(0 ${open ? "0%" : "100%"} 0 0)`, transitionDelay: open ? ".2s" : "0s" }}>
+        <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden>
+          {series.map((s) => (
+            <React.Fragment key={s.key}>
+              <polygon points={`${X(0, n)},100 ${pts(s)} ${X(n - 1, n)},100`} fill={s.color ?? "currentColor"} style={{ opacity: s.color ? 0.08 : 0.1 }} />
+              <polyline points={pts(s)} fill="none" stroke={s.color ?? "currentColor"} strokeWidth="3" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+            </React.Fragment>
+          ))}
+        </svg>
+      </div>
+      {series.map((s) =>
+        s.points.map((p, i) => {
+          const selected = p.y === year;
+          return (
+            <button
+              key={`${s.key}-${p.y}`}
+              type="button"
+              className={`dot${below(s, i) ? " below" : ""}`}
+              title={`${s.label ? `${s.label} ` : ""}${p.y}: ${fmd(p.v)}`}
+              style={{
+                left: `${X(i, n)}%`,
+                top: `${Y(p.v)}%`,
+                color: s.color,
+                transform: `translate(-50%,-50%) scale(${open ? 1 : 0})`,
+                transitionDelay: open ? `${(0.25 + (i / Math.max(1, n - 1)) * 0.6).toFixed(2)}s` : "0s",
+              }}
+              onClick={() => onSelectYear(p.y)}
+              onMouseEnter={() => hover(p.y)}
+              onMouseLeave={() => onHover(null)}
+              onFocus={() => hover(p.y)}
+              onBlur={() => onHover(null)}
+            >
+              <span className="val">{fmd(p.v)}</span>
+              <span className="mark" style={{ width: selected ? 16 : 12, height: selected ? 16 : 12, background: selected ? "currentColor" : paper }} />
+            </button>
+          );
+        }),
+      )}
+      {years.map((y, i) => {
+        const selected = y === year;
+        return (
+          <button
+            key={y}
+            type="button"
+            className="year"
+            style={{ left: `${X(i, n)}%`, fontWeight: selected ? 700 : 500, opacity: selected ? 1 : 0.7 }}
+            onClick={() => onSelectYear(y)}
+            onMouseEnter={() => hover(y)}
+            onMouseLeave={() => onHover(null)}
+          >
+            {y}
+            {nominal(y) ? "*" : ""}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Headline change between the first and last year that are in the same prices. */
+function changeOver(points: Point[], nominal: (y: number) => boolean) {
+  const comparable = points.filter((p) => !nominal(p.y));
+  const span = comparable.length >= 2 ? comparable : points;
+  const first = span[0]!;
+  const last = span[span.length - 1]!;
+  const pct = first.v ? ((last.v - first.v) / first.v) * 100 : 0;
+  return { first, last, pct };
+}
+
+// ---- Overview: inkomster vs utgifter per year ----------------------------------
+
+type OverviewProps = Prices & {
+  years: number[];
+  budgets: Record<number, BudgetJson>;
+  year: number;
+  onSelectYear: (y: number) => void;
+  onHover: (info: Info | null) => void;
+};
+
+const SIDES = [
+  { k: "exp", label: "Utgifter", color: "var(--expense)" },
+  { k: "rev", label: "Inkomster", color: "var(--revenue)" },
+] as const;
+
+function Overview({ years, budgets, year, factorOf, nominal, priceNote, nominalNote, onSelectYear, onHover }: OverviewProps) {
+  const totals = years.map((y) => {
+    const b = budgets[y];
+    const f = factorOf(y);
+    return { y, exp: (b?.expensesTotal ?? 0) * f, rev: (b?.revenuesTotal ?? 0) * f };
+  });
+  const sel = totals.find((t) => t.y === year) ?? totals[totals.length - 1]!;
+  const saldo = sel.rev - sel.exp;
+  const infoFor = (y: number): Info => {
+    const t = totals.find((x) => x.y === y) ?? sel;
+    return {
+      title: `Statens budget ${t.y}${nominal(t.y) ? "*" : ""}`,
+      value: `Saldo ${signed(t.rev - t.exp)}`,
+      share: `Utgifter ${fmd(t.exp)} · Inkomster ${fmd(t.rev)}${priceNote}`,
+      hint: t.y === year ? "" : "Klicka för att välja år",
+    };
+  };
+
+  return (
+    <div className="panel overview" style={{ background: PAPER, color: INK, ["--grid-color" as string]: "rgba(11,11,11,0.12)" }}>
+      <div className="content">
+        <div className="top">
+          <div className="heading">
+            <span className="kicker">
+              Statens budget · {years[0]}–{years[years.length - 1]}
+              {priceNote}
+            </span>
+            <span className="name" lang="sv">
+              Inkomster och utgifter
+            </span>
+            <span className="legend">
+              {SIDES.map((s) => (
+                <span key={s.k}>
+                  <span className="swatch" style={{ background: s.color }} />
+                  {s.label}
+                </span>
+              ))}
+            </span>
+          </div>
+          <div className="delta">
+            <span className="kicker">Saldo {sel.y}</span>
+            <span className="pct" style={{ color: saldo < 0 ? "var(--revenue)" : "var(--expense)" }}>
+              {signed(saldo)}
+            </span>
+            <span className="abs">{saldo < 0 ? "Underskott – lånebehov" : saldo > 0 ? "Överskott" : "Balans"}</span>
+          </div>
+        </div>
+        <LineChart
+          series={SIDES.map((s) => ({ key: s.k, label: s.label, color: s.color, points: totals.map((t) => ({ y: t.y, v: t[s.k] })) }))}
+          years={years}
+          year={year}
+          nominal={nominal}
+          paper={PAPER}
+          onSelectYear={onSelectYear}
+          infoFor={infoFor}
+          onHover={onHover}
+        />
+        <div className="note">{years.some(nominal) ? nominalNote : ""}</div>
+      </div>
+    </div>
+  );
+}
+
+// ---- Focus panel: history of the current group or focused posting -------------
+
+type FocusProps = Prices & {
+  years: number[];
+  budgets: Record<number, BudgetJson>;
+  year: number;
+  view: View;
+  gkey: string;
+  /** Row key of the focused posting, or null for the whole group. */
+  row: string | null;
+  kicker: string;
+  title: string;
+  bg: string;
+  fg: string;
+  onSelectYear: (y: number) => void;
+  onHover: (info: Info | null) => void;
+};
+
+function FocusPanel({ years, budgets, year, view, gkey, row, kicker, title, bg, fg, factorOf, nominal, priceNote, nominalNote, onSelectYear, onHover }: FocusProps) {
+  const points = years.map((y) => {
+    const b = budgets[y];
+    const g = b ? normalize(b, view, factorOf(y)).find((x) => x.key === gkey) : undefined;
+    let v = 0;
+    if (g) v = row == null ? g.total : (g.rows.find((r) => r.key === row)?.v ?? 0);
+    return { y, v };
+  });
+  const { first, last, pct } = changeOver(points, nominal);
+  const dark = fg !== INK;
+  const infoFor = (y: number): Info => {
+    const p = points.find((x) => x.y === y)!;
+    return { title: `${title} ${y}${nominal(y) ? "*" : ""}`, value: fmd(p.v), share: priceNote.replace(/^ · /, ""), hint: y === year ? "" : "Klicka för att välja år" };
+  };
+
+  return (
+    <div className="panel focus" style={{ background: bg, color: fg, ["--grid-color" as string]: dark ? "rgba(255,255,255,0.22)" : "rgba(11,11,11,0.12)" }}>
+      <div className="content">
+        <div className="top">
+          <div className="heading">
+            <span className="kicker">
+              {kicker}
+              {priceNote}
+              {years.some(nominal) ? ` · ${nominalNote}` : ""}
+            </span>
+            <span className="name" lang="sv">
+              {title}
+            </span>
+          </div>
+          <div className="delta">
+            <span className="kicker">
+              {first.y}–{last.y}
+            </span>
+            <span className="pct">
+              {pct > 0 ? "+" : pct < 0 ? "−" : "±"}
+              {NF1.format(Math.abs(pct))} %
+            </span>
+            <span className="abs">{signed(last.v - first.v)}</span>
+          </div>
+        </div>
+        <LineChart
+          key={`${gkey}/${row ?? ""}`}
+          series={[{ key: "v", label: title, points }]}
+          years={years}
+          year={year}
+          nominal={nominal}
+          paper={bg}
+          onSelectYear={onSelectYear}
+          infoFor={infoFor}
+          onHover={onHover}
+        />
+      </div>
+    </div>
+  );
+}
 
 // ---- Tile ---------------------------------------------------------------------
 
 type TileProps = {
   it: Item;
-  rect: Rect;
+  rect: { left: string; top: string; width: string; height: string };
   w: number;
   h: number;
   bg: string;
@@ -183,13 +492,12 @@ type TileProps = {
   share: string;
   info: Info;
   hovered: boolean;
-  showIcons: boolean;
+  focused: boolean;
   onHover: (info: Info | null) => void;
   onActivate: () => void;
-  onHistory: () => void;
 };
 
-function Tile({ it, rect, w, h, bg, fg, share, info, hovered, showIcons, onHover, onActivate, onHistory }: TileProps) {
+function Tile({ it, rect, w, h, bg, fg, share, info, hovered, focused, onHover, onActivate }: TileProps) {
   const minD = Math.min(w, h);
   const area = w * h;
   const showLabel = w > 84 && h > 54;
@@ -197,21 +505,20 @@ function Tile({ it, rect, w, h, bg, fg, share, info, hovered, showIcons, onHover
   const shareSize = Math.round(Math.max(18, Math.min(64, Math.sqrt(area) / 5.2)));
   const titleSize = minD > 220 ? 18 : minD > 130 ? 15 : w < 130 ? 12 : 13;
   const clamp = h > 170 ? 3 : h > 80 ? 2 : 1;
-  const light = fg === INK;
 
   return (
     <div
       role="button"
       tabIndex={0}
       aria-label={`${info.title}, ${info.value}`}
-      className={`tile${hovered ? " hovered" : ""}`}
+      aria-pressed={focused || undefined}
+      className={`tile${hovered ? " hovered" : ""}${focused ? " focused" : ""}`}
       style={{
         ...rect,
         background: bg,
         color: fg,
         padding: minD > 160 ? "14px 16px" : "8px 10px",
-        cursor: it.drill ? "zoom-in" : "default",
-        ["--icon-bg" as string]: light ? "rgba(11,11,11,0.08)" : "rgba(255,255,255,0.18)",
+        cursor: it.drill ? "zoom-in" : "pointer",
       }}
       onClick={onActivate}
       onKeyDown={(e) => {
@@ -225,23 +532,7 @@ function Tile({ it, rect, w, h, bg, fg, share, info, hovered, showIcons, onHover
       onFocus={() => onHover(info)}
       onBlur={() => onHover(null)}
     >
-      {showIcons && (
-        <div className="icons">
-          <button
-            type="button"
-            className="icon-btn"
-            title="Visa historik"
-            aria-label={`Visa historik för ${it.label}`}
-            onClick={(e) => {
-              e.stopPropagation();
-              onHistory();
-            }}
-          >
-            <ClockIcon />
-          </button>
-        </div>
-      )}
-      <span className="head" style={{ opacity: showLabel ? 1 : 0, paddingRight: showIcons ? 34 : 0 }}>
+      <span className="head" style={{ opacity: showLabel ? 1 : 0 }}>
         <span className="code">{it.code}</span>
         <span className="title" lang="sv" style={{ fontSize: titleSize, WebkitLineClamp: clamp }}>
           {it.label}
@@ -257,199 +548,29 @@ function Tile({ it, rect, w, h, bg, fg, share, info, hovered, showIcons, onHover
   );
 }
 
-// ---- History overlay ----------------------------------------------------------
-
-type HistoryProps = {
-  hist: Hist;
-  open: boolean;
-  years: number[];
-  budgets: Record<number, BudgetJson>;
-  year: number;
-  /** Price-level factor per year (1 when showing nominal amounts). */
-  factorOf: (y: number) => number;
-  /** True when a year is shown nominal because inflation data is missing. */
-  nominal: (y: number) => boolean;
-  priceNote: string;
-  nominalNote: string;
-  onClose: () => void;
-};
-
-function History({ hist, open, years, budgets, year, factorOf, nominal, priceNote, nominalNote, onClose }: HistoryProps) {
-  const series = years.map((y) => {
-    const b = budgets[y];
-    const g = b ? normalize(b, hist.view, factorOf(y)).find((x) => x.key === hist.gkey) : undefined;
-    let v = 0;
-    if (g) v = hist.row == null ? g.total : (g.rows.find((r) => r.key === hist.row)?.v ?? 0);
-    return { y, v };
-  });
-  const vs = series.map((s) => s.v);
-  const mn = Math.min(...vs);
-  const mx = Math.max(...vs);
-  const pad = Math.max((mx - mn) * 0.25, mx * 0.05, 1);
-  let lo = Math.max(0, mn - pad);
-  let hi = mx + pad;
-  const raw = (hi - lo) / 4;
-  const mag = Math.pow(10, Math.floor(Math.log10(raw)));
-  const step = [1, 2, 2.5, 5, 10].map((m) => m * mag).find((s) => s >= raw) ?? mag * 10;
-  lo = Math.floor(lo / step) * step;
-  hi = Math.ceil(hi / step) * step;
-
-  const n = series.length;
-  const X = (i: number) => (n === 1 ? 50 : 5 + (i / (n - 1)) * 90);
-  const Y = (v: number) => 100 - ((v - lo) / (hi - lo || 1)) * 100;
-  const pts = series.map((s, i) => `${X(i).toFixed(2)},${Y(s.v).toFixed(2)}`);
-  const grid: { top: string; label: string }[] = [];
-  for (let v = lo; v <= hi + step / 2; v += step) {
-    grid.push({ top: `${Y(v)}%`, label: (step >= 1e6 ? NF0 : NF1).format(v / 1e6) });
-  }
-  // The headline change compares only years that are in the same prices; a
-  // year shown nominal for lack of inflation data is left out of it.
-  const comparable = series.filter((s) => !nominal(s.y));
-  const span = comparable.length >= 2 ? comparable : series;
-  const first = span[0]!;
-  const last = span[span.length - 1]!;
-  const ch = first.v ? ((last.v - first.v) / first.v) * 100 : 0;
-  const dark = hist.fg !== INK;
-  const anyNominal = years.some(nominal);
-
-  return (
-    <div
-      className="hist"
-      role="dialog"
-      aria-modal="false"
-      aria-label={`Historik: ${hist.title}`}
-      style={{
-        left: open ? "0%" : hist.left,
-        top: open ? "0%" : hist.top,
-        width: open ? "100%" : hist.width,
-        height: open ? "100%" : hist.height,
-        borderRadius: open ? 14 : 10,
-        background: hist.bg,
-        color: hist.fg,
-        ["--icon-bg" as string]: dark ? "rgba(255,255,255,0.18)" : "rgba(11,11,11,0.08)",
-        ["--grid-color" as string]: dark ? "rgba(255,255,255,0.22)" : "rgba(11,11,11,0.12)",
-      }}
-    >
-      <div
-        className="content"
-        style={{
-          opacity: open ? 1 : 0,
-          transform: `translateY(${open ? 0 : 12}px)`,
-          transition: `opacity .3s ease ${open ? ".18s" : "0s"}, transform .4s cubic-bezier(.2,.7,.2,1) ${open ? ".18s" : "0s"}`,
-        }}
-      >
-        <div className="top">
-          <div className="heading">
-            <span className="kicker">
-              {hist.kicker}
-              {priceNote}
-            </span>
-            <span className="name" lang="sv">
-              {hist.title}
-            </span>
-          </div>
-          <div className="delta">
-            <span className="kicker">
-              {first.y}–{last.y}
-            </span>
-            <span className="pct">
-              {ch > 0 ? "+" : ch < 0 ? "−" : "±"}
-              {NF1.format(Math.abs(ch))} %
-            </span>
-            <span className="abs">
-              {last.v >= first.v ? "+" : "−"}
-              {fmd(Math.abs(last.v - first.v))}
-            </span>
-          </div>
-          <button type="button" className="icon-btn close" title="Stäng (Esc)" aria-label="Stäng historik" onClick={onClose}>
-            <CloseIcon />
-          </button>
-        </div>
-
-        <div className="chart">
-          {grid.map((g) => (
-            <div key={g.top} className="gridline" style={{ top: g.top }}>
-              <span>{g.label}</span>
-            </div>
-          ))}
-          <div
-            className="reveal"
-            style={{
-              clipPath: `inset(0 ${open ? "0%" : "100%"} 0 0)`,
-              transitionDelay: open ? ".35s" : "0s",
-            }}
-          >
-            <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden>
-              <polygon points={`${X(0)},100 ${pts.join(" ")} ${X(n - 1)},100`} fill="currentColor" style={{ opacity: 0.1 }} />
-              <polyline points={pts.join(" ")} fill="none" stroke="currentColor" strokeWidth="3" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
-            </svg>
-          </div>
-          {series.map((s, i) => {
-            const selected = s.y === year;
-            const delay = open ? `${(0.4 + (i / Math.max(1, n - 1)) * 0.8).toFixed(2)}s` : "0s";
-            return (
-              <div
-                key={s.y}
-                className="dot"
-                style={{
-                  left: `${X(i)}%`,
-                  top: `${Y(s.v)}%`,
-                  transform: `translate(-50%,-50%) scale(${open ? 1 : 0})`,
-                  transitionDelay: delay,
-                }}
-              >
-                <span className="val">{fmd(s.v)}</span>
-                <span
-                  className="mark"
-                  style={{
-                    width: selected ? 16 : 12,
-                    height: selected ? 16 : 12,
-                    background: selected ? "currentColor" : hist.bg,
-                  }}
-                />
-              </div>
-            );
-          })}
-          {series.map((s, i) => {
-            const selected = s.y === year;
-            return (
-              <span
-                key={s.y}
-                className="year"
-                style={{ left: `${X(i)}%`, fontWeight: selected ? 700 : 500, opacity: selected ? 1 : 0.7 }}
-              >
-                {s.y}
-                {nominal(s.y) ? "*" : ""}
-              </span>
-            );
-          })}
-        </div>
-        <div className="note">{anyNominal ? nominalNote : ""}</div>
-      </div>
-    </div>
-  );
-}
-
 // ---- App ----------------------------------------------------------------------
+
+const initialRoute = parseRoute(new URL(window.location.href));
 
 function App() {
   const [yrs, setYrs] = useState<number[]>([]);
   const [budgets, setBudgets] = useState<Record<number, BudgetJson>>({});
-  const [year, setYear] = useState<number | null>(null);
-  const [view, setView] = useState<View>("exp");
-  const [uo, setUo] = useState<string | null>(null);
-  const [rest, setRest] = useState(false);
+  const [mode, setMode] = useState<Mode>(initialRoute.mode);
+  const [year, setYear] = useState<number | null>(initialRoute.year);
+  const [view, setView] = useState<View>(initialRoute.view);
+  const [uo, setUo] = useState<string | null>(initialRoute.group != null ? groupKey(initialRoute.view, initialRoute.group) : null);
+  const [rest, setRest] = useState(initialRoute.rest);
+  /** Focused posting: its row key once resolved, and the id from the URL until then. */
+  const [itemKey, setItemKey] = useState<string | null>(null);
+  const [pendingItem, setPendingItem] = useState<number | null>(initialRoute.item);
+  const [realWanted, setReal] = useState(initialRoute.real);
   const [hover, setHover] = useState<Info | null>(null);
-  const [hist, setHist] = useState<Hist | null>(null);
-  const [histOpen, setHistOpen] = useState(false);
   const [rates, setRates] = useState<Record<string, number>>({});
-  const [real, setReal] = useState(false);
   const [size, setSize] = useState({ W: 1000, H: 600 });
   const [error, setError] = useState(false);
   const mapRef = useRef<HTMLDivElement>(null);
-  const histTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
-  // Load the list of years and every budget file (the history chart needs all years).
+  // Load the list of years and every budget file (the charts need all years).
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -476,7 +597,8 @@ function App() {
         setYrs(sorted);
         setRates(parsedInflation.success ? parsedInflation.data.rates : {});
         setBudgets(Object.fromEntries(entries));
-        setYear(latest ?? null);
+        // Keep the year from the URL when it exists, otherwise show the latest.
+        setYear((y) => (y != null && sorted.includes(y) ? y : (latest ?? null)));
         if (latest == null) setError(true);
       } catch {
         if (!cancelled) setError(true);
@@ -496,53 +618,76 @@ function App() {
     const ro = new ResizeObserver(measure);
     ro.observe(el);
     return () => ro.disconnect();
-  }, []);
+  }, [mode]);
 
-  const openHist = useCallback((h: Hist) => {
-    trackEvent("open_history", { view: h.view, group: h.gkey, row: h.row ?? "", title: h.title });
-    clearTimeout(histTimer.current);
-    setHist(h);
-    setHistOpen(false);
+  const latest = yrs.length ? yrs[yrs.length - 1]! : null;
+
+  const applyRoute = (r: ReturnType<typeof parseRoute>) => {
+    setMode(r.mode);
+    setView(r.view);
+    setYear(r.year != null && yrs.includes(r.year) ? r.year : latest);
+    setUo(r.group != null ? groupKey(r.view, r.group) : null);
+    setRest(r.rest);
+    setItemKey(null);
+    setPendingItem(r.item);
+    setReal(r.real);
     setHover(null);
-    // Two frames so the overlay first paints at the source rect, then animates open.
-    requestAnimationFrame(() => requestAnimationFrame(() => setHistOpen(true)));
-  }, []);
+  };
 
-  const closeHist = useCallback(() => {
-    setHistOpen(false);
-    clearTimeout(histTimer.current);
-    histTimer.current = setTimeout(() => setHist(null), 520);
-  }, []);
+  // Back/forward: restore the state the URL describes.
+  useEffect(() => {
+    const onPop = () => applyRoute(parseRoute(new URL(window.location.href)));
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  });
 
-  useEffect(() => () => clearTimeout(histTimer.current), []);
-
-  // Esc: close history → leave Övriga → back to top level.
+  // Esc: unfocus posting → leave Övriga → back to top level.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
-      if (hist) return closeHist();
-      if (rest) setRest(false);
+      if (itemKey != null || pendingItem != null) {
+        setItemKey(null);
+        setPendingItem(null);
+      } else if (rest) setRest(false);
       else setUo(null);
       setHover(null);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [hist, rest, closeHist]);
+  }, [itemKey, pendingItem, rest]);
 
-  const switchView = (k: View) => {
-    if (view === k) return;
-    clearTimeout(histTimer.current);
+  const clearFocus = () => {
+    setItemKey(null);
+    setPendingItem(null);
+  };
+
+  const showOverview = () => {
+    setMode("overview");
+    setUo(null);
+    setRest(false);
+    clearFocus();
+    setHover(null);
+  };
+
+  const showGraph = (k: View) => {
+    if (mode === "explore" && view === k) return;
+    setMode("explore");
     setView(k);
     setUo(null);
     setRest(false);
+    clearFocus();
     setHover(null);
-    setHist(null);
-    setHistOpen(false);
   };
 
   const goRoot = () => {
     setUo(null);
     setRest(false);
+    clearFocus();
+    setHover(null);
+  };
+
+  const selectYear = (y: number) => {
+    setYear(y);
     setHover(null);
   };
 
@@ -550,43 +695,73 @@ function App() {
   const T = COPY[view];
   const B = year != null ? budgets[year] : undefined;
 
-  // Each drill state is a virtual page for analytics.
-  const pageTitle = (() => {
-    if (year == null) return "";
-    const g = uo != null && B ? normalize(B, view).find((x) => x.key === uo) : undefined;
-    const where = g ? `${g.title}${rest ? " · Övriga" : ""}` : T.root;
-    return `${where} · ${rev ? "Inkomster" : "Utgifter"} ${year}`;
-  })();
-  useEffect(() => {
-    if (year == null) return;
-    const parts = [rev ? "inkomster" : "utgifter", String(year)];
-    if (uo != null) parts.push(uo);
-    if (rest) parts.push("ovriga");
-    trackPageView(`/${parts.join("/")}`, pageTitle);
-  }, [rev, year, uo, rest, pageTitle]);
-  const multiYear = yrs.length > 1;
-
   // Inflation adjustment: everything is expressed in the prices of the latest
   // year that has a known rate (the newest budget year usually has none yet).
   const baseYear = useMemo(() => chooseBaseYear(rates, yrs), [rates, yrs]);
   const { factors, convertible } = useMemo(() => inflationFactors(rates, yrs, baseYear ?? 0), [rates, yrs, baseYear]);
   const hasInflation = baseYear != null && convertible.length > 1;
-  const factorOf = (y: number) => (real ? (factors.get(y) ?? 1) : 1);
-  const nominal = (y: number) => real && factors.get(y) == null;
-  const priceNote = real && baseYear != null ? ` · i ${baseYear} års priser` : "";
-  const nominalNote = "* nominellt, inflationsdata saknas";
+  const real = realWanted && hasInflation;
+  const prices: Prices = {
+    factorOf: (y) => (real ? (factors.get(y) ?? 1) : 1),
+    nominal: (y) => real && factors.get(y) == null,
+    priceNote: real && baseYear != null ? ` · i ${baseYear} års priser` : "",
+    nominalNote: "* nominellt, inflationsdata saknas",
+  };
+  const { factorOf, nominal, priceNote, nominalNote } = prices;
   const f = year != null ? factorOf(year) : 1;
 
   const all = useMemo(() => (B ? normalize(B, view, f) : []), [B, view, f]);
   const total = B ? (rev ? B.revenuesTotal : B.expensesTotal) * f : 0;
   const groups = all.filter((g) => g.total > 0).sort((a, b) => b.total - a.total);
   const hueOf = Object.fromEntries(all.map((g, i) => [g.key, ((i * 360) / all.length + (rev ? 30 : 250)) % 360])) as Record<string, number>;
-  const group = uo != null ? all.find((g) => g.key === uo) ?? null : null;
+  const group = uo != null ? (all.find((g) => g.key === uo) ?? null) : null;
   const gross = groups.reduce((s, g) => s + g.total, 0) || 1;
   const negs = all.filter((g) => g.total < 0);
   const negNote = negs.length
     ? ` · brutto ${fmd(gross)}, minus ${negs.map((g) => `${g.title.toLowerCase()} ${fmd(-g.total)}`).join(", ")}`
     : "";
+
+  // A group from the URL that doesn't exist in this year's data: drop it.
+  useEffect(() => {
+    if (uo != null && B && !group) {
+      setUo(null);
+      setRest(false);
+      clearFocus();
+    }
+  }, [uo, B, group]);
+
+  // Resolve a focused posting from its URL id once the group is known.
+  useEffect(() => {
+    if (pendingItem == null || !group) return;
+    const row = group.rows.find((r) => r.id === pendingItem);
+    setItemKey(row?.key ?? null);
+    setPendingItem(null);
+  }, [pendingItem, group]);
+
+  const focusedRow = itemKey != null && group ? (group.rows.find((r) => r.key === itemKey) ?? null) : null;
+  const itemId = focusedRow?.id ?? pendingItem;
+
+  // Keep the URL and the document title in step with what is on screen.
+  const pageTitle =
+    mode === "overview"
+      ? "Inkomster och utgifter"
+      : year == null
+        ? T.label
+        : `${focusedRow ? `${focusedRow.title} · ` : ""}${group ? `${group.title}${rest ? " · Övriga" : ""}` : T.root} · ${T.label} ${year}`;
+  const synced = useRef<string | null>(null);
+  useEffect(() => {
+    if (year == null) return;
+    const url = buildUrl({ mode, view, year, group: group ? groupNumber(group.key) : null, rest, item: group ? itemId : null, real }, latest);
+    const current = window.location.pathname + window.location.search;
+    if (url !== current) {
+      // The first sync only normalises the URL we were opened with.
+      if (synced.current === null) window.history.replaceState(null, "", url);
+      else window.history.pushState(null, "", url);
+    }
+    document.title = `${pageTitle} – Statsbudgeten`;
+    if (synced.current !== url) trackPageView(url, pageTitle);
+    synced.current = url;
+  }, [mode, view, year, group, rest, itemId, real, latest, pageTitle]);
 
   // Items at the current drill level.
   let items: Item[] = [];
@@ -594,6 +769,7 @@ function App() {
   if (B && !group) {
     items = groups.map((g, i) => ({
       key: g.key,
+      id: null,
       code: g.code,
       label: g.title,
       v: g.total,
@@ -601,10 +777,10 @@ function App() {
       lv: i % 3,
       rank: i / groups.length,
       drill: true,
-      histRef: { view, gkey: g.key, row: null, kicker: `${g.code} · ${T.kind}` },
       onClick: () => {
         setUo(g.key);
         setRest(false);
+        clearFocus();
         setHover(null);
       },
     }));
@@ -619,16 +795,22 @@ function App() {
     const hue = hueOf[group.key]!;
     items = list.map((r, i) => ({
       key: r.key,
+      id: r.id,
       code: `${T.item} ${r.id ?? ""}`,
       label: r.title,
       v: r.v,
       hue,
       rank: i / Math.max(1, list.length),
-      histRef: { view, gkey: group.key, row: r.key, kicker: `${group.code} · ${group.title}` },
+      onClick: () => {
+        setItemKey((k) => (k === r.key ? null : r.key));
+        setPendingItem(null);
+        setHover(null);
+      },
     }));
     if (useTail) {
       items.push({
         key: "__rest",
+        id: null,
         code: `${tail.length} ${T.items}`,
         label: T.rest,
         v: tail.reduce((s, r) => s + r.v, 0),
@@ -638,6 +820,7 @@ function App() {
         drill: true,
         onClick: () => {
           setRest(true);
+          clearFocus();
           setHover(null);
         },
       });
@@ -647,55 +830,63 @@ function App() {
   const { W, H } = size;
   const sumItems = items.reduce((s, it) => s + it.v, 0) || 1;
   const rects = squarify(items.map((it) => ({ it, a: (it.v / sumItems) * W * H })), W, H);
+  const multiYear = yrs.length > 1;
 
-  const groupBg = group
-    ? COLOR_MODE === "färg"
-      ? `oklch(0.80 0.09 ${hueOf[group.key]})`
-      : "oklch(0.86 0.01 260)"
-    : "transparent";
+  // The focus panel takes the group colour, or the focused posting's tile colour.
+  const focusItem = focusedRow ? items.find((it) => it.key === focusedRow.key) : undefined;
+  const panelColor = focusItem
+    ? colorOf(focusItem, true)
+    : { bg: group ? (COLOR_MODE === "färg" ? `oklch(0.80 0.09 ${hueOf[group.key]})` : "oklch(0.86 0.01 260)") : PAPER, fg: INK };
 
   const base: Info = !B
     ? { title: error ? "Kunde inte läsa data" : "Läser in …" }
-    : group
+    : mode === "overview"
       ? {
-          title: rest ? T.rest : group.title,
-          value: fmd(rest ? sumItems : group.total),
-          share: `${fpct(((rest ? sumItems : group.total) / gross) * 100)} av ${T.all} ${year} · ${items.length} block${priceNote}`,
-          hint: year != null && nominal(year) ? nominalNote : "Esc för att gå tillbaka",
+          title: `Statens budget ${year}${year != null && nominal(year) ? "*" : ""}`,
+          value: `Saldo ${signed(B.revenuesTotal * f - B.expensesTotal * f)}`,
+          share: `Utgifter ${fmd(B.expensesTotal * f)} · Inkomster ${fmd(B.revenuesTotal * f)}${priceNote}`,
+          hint: year != null && nominal(year) ? nominalNote : "Välj Utgifter eller Inkomster för att utforska",
         }
-      : {
-          title: `${T.heading} ${year}`,
-          value: fmd(total),
-          share: `${groups.length} ${T.areas}${negNote}${priceNote}`,
-          hint: year != null && nominal(year) ? nominalNote : "Klicka på ett block",
-        };
+      : group
+        ? {
+            title: rest ? T.rest : group.title,
+            value: fmd(rest ? sumItems : group.total),
+            share: `${fpct(((rest ? sumItems : group.total) / gross) * 100)} av ${T.all} ${year} · ${items.length} block${priceNote}`,
+            hint: year != null && nominal(year) ? nominalNote : focusedRow ? "Esc för att avmarkera" : "Klicka på ett block för att se dess historik",
+          }
+        : {
+            title: `${T.heading} ${year}`,
+            value: fmd(total),
+            share: `${groups.length} ${T.areas}${negNote}${priceNote}`,
+            hint: year != null && nominal(year) ? nominalNote : "Klicka på ett block",
+          };
   const info = hover ?? base;
+  const overview = mode === "overview";
 
   return (
     <div className="app" lang="sv">
       <div className="menu">
         <span className="brand">Statsbudgeten</span>
-        <div className="tabs" role="tablist">
+        <nav className="tabs" aria-label="Vy">
+          <button type="button" className={`tab${overview ? " active" : ""}`} aria-current={overview ? "page" : undefined} onClick={showOverview}>
+            <span>Översikt</span>
+          </button>
           {(
             [
-              ["exp", "Utgifter", "var(--expense)", B ? B.expensesTotal * f : undefined],
-              ["rev", "Inkomster", "var(--revenue)", B ? B.revenuesTotal * f : undefined],
+              ["exp", "var(--expense)", B ? B.expensesTotal * f : undefined],
+              ["rev", "var(--revenue)", B ? B.revenuesTotal * f : undefined],
             ] as const
-          ).map(([k, label, dot, tot]) => (
-            <button
-              key={k}
-              type="button"
-              role="tab"
-              aria-selected={view === k}
-              className={`tab${view === k ? " active" : ""}`}
-              onClick={() => switchView(k)}
-            >
-              <span className="dot" style={{ background: dot }} />
-              <span>{label}</span>
-              <span className="total">{tot != null ? fmd(tot) : ""}</span>
-            </button>
-          ))}
-        </div>
+          ).map(([k, dot, tot]) => {
+            const active = !overview && view === k;
+            return (
+              <button key={k} type="button" className={`tab${active ? " active" : ""}`} aria-current={active ? "page" : undefined} onClick={() => showGraph(k)}>
+                <span className="dot" style={{ background: dot }} />
+                <span>{COPY[k].label}</span>
+                <span className="total">{tot != null ? fmd(tot) : ""}</span>
+              </button>
+            );
+          })}
+        </nav>
         {hasInflation && (
           <button
             type="button"
@@ -705,7 +896,7 @@ function App() {
             title={`Räkna om alla belopp till ${baseYear} års prisnivå (KPI)`}
             onClick={() => {
               trackEvent("toggle_inflation", { enabled: !real, base_year: baseYear ?? "" });
-              setReal((r) => !r);
+              setReal(!real);
               setHover(null);
             }}
           >
@@ -726,10 +917,7 @@ function App() {
                 aria-checked={y === year}
                 className={y === year ? "active" : ""}
                 title={nominal(y) ? "Nominellt belopp, inflationsdata saknas" : undefined}
-                onClick={() => {
-                  setYear(y);
-                  setHover(null);
-                }}
+                onClick={() => selectYear(y)}
               >
                 {y}
                 {nominal(y) ? "*" : ""}
@@ -741,127 +929,126 @@ function App() {
 
       <header className="crumb-row">
         <nav className="crumbs" aria-label="Brödsmulor">
-          <span className="crumb">
-            <button type="button" className={group ? "" : "current"} onClick={goRoot} disabled={!group}>
-              {T.root}
-            </button>
-            {group && <span className="sep">/</span>}
-          </span>
-          {group && (
-            <span className="crumb">
-              <button
-                type="button"
-                className={rest ? "" : "current"}
-                disabled={!rest}
-                onClick={() => {
-                  setRest(false);
-                  setHover(null);
-                }}
-              >
-                {group.title}
-              </button>
-              {rest && <span className="sep">/</span>}
-            </span>
-          )}
-          {group && rest && (
+          {overview ? (
             <span className="crumb">
               <button type="button" className="current" disabled>
-                Övriga
+                Inkomster och utgifter
               </button>
             </span>
+          ) : (
+            <>
+              <span className="crumb">
+                <button type="button" className={group ? "" : "current"} onClick={goRoot} disabled={!group}>
+                  {T.root}
+                </button>
+                {group && <span className="sep">/</span>}
+              </span>
+              {group && (
+                <span className="crumb">
+                  <button
+                    type="button"
+                    className={rest || focusedRow ? "" : "current"}
+                    disabled={!rest && !focusedRow}
+                    onClick={() => {
+                      setRest(false);
+                      clearFocus();
+                      setHover(null);
+                    }}
+                  >
+                    {group.title}
+                  </button>
+                  {(rest || focusedRow) && <span className="sep">/</span>}
+                </span>
+              )}
+              {group && rest && (
+                <span className="crumb">
+                  <button
+                    type="button"
+                    className={focusedRow ? "" : "current"}
+                    disabled={!focusedRow}
+                    onClick={() => {
+                      clearFocus();
+                      setHover(null);
+                    }}
+                  >
+                    Övriga
+                  </button>
+                  {focusedRow && <span className="sep">/</span>}
+                </span>
+              )}
+              {group && focusedRow && (
+                <span className="crumb">
+                  <button type="button" className="current" disabled>
+                    {focusedRow.title}
+                  </button>
+                </span>
+              )}
+            </>
           )}
         </nav>
-        {group && !rest && multiYear && (
-          <button
-            type="button"
-            className="hist-pill"
-            title="Visa historik för hela området"
-            style={{ background: groupBg }}
-            onClick={() =>
-              openHist({
-                view,
-                gkey: group.key,
-                row: null,
-                kicker: `${group.code} · ${T.kind}`,
-                title: group.title,
-                left: "88%",
-                top: "0%",
-                width: "12%",
-                height: "12%",
-                bg: groupBg,
-                fg: INK,
-              })
-            }
-          >
-            <ClockIcon />
-            <span>Historik</span>
-          </button>
-        )}
       </header>
 
-      <div className="map" ref={mapRef}>
-        {rects.map(({ it, x, y, w, h }) => {
-          let L: number, C: number;
-          if (COLOR_MODE === "färg") {
-            L = it.rest ? 0.9 : group ? 0.62 + it.rank * 0.28 : 0.74 + (it.lv ?? 0) * 0.04;
-            C = it.rest ? 0.02 : group ? 0.13 - it.rank * 0.07 : 0.11;
-          } else {
-            L = 0.36 + Math.pow(it.rank, 0.7) * 0.54;
-            C = 0.02;
-          }
-          const hue = COLOR_MODE === "färg" ? it.hue : 260;
-          const bg = `oklch(${L.toFixed(3)} ${C.toFixed(3)} ${hue})`;
-          const fg = L < 0.66 ? PAPER : INK;
-          const shareOfParent = (it.v / parentTotal) * 100;
-          const shareOfAll = (it.v / gross) * 100;
-          const tileInfo: Info = {
-            title: `${it.code ? `${it.code} · ` : ""}${it.label}`,
-            value: fmd(it.v),
-            share: group
-              ? `${fpct(shareOfParent)} av ${group.title.toLowerCase()} · ${fpct(shareOfAll)} av ${T.all}`
-              : `${fpct(shareOfAll)} av ${T.all}`,
-            hint: it.drill ? "Klicka för att utforska" : "",
-          };
-          const rect: Rect = {
-            left: `${(x / W) * 100}%`,
-            top: `${(y / H) * 100}%`,
-            width: `${(w / W) * 100}%`,
-            height: `${(h / H) * 100}%`,
-          };
-          const showIcons = !!it.histRef && w > 150 && h > 110 && multiYear;
-          return (
-            <Tile
-              key={it.key}
-              it={it}
-              rect={rect}
-              w={w}
-              h={h}
-              bg={bg}
-              fg={fg}
-              share={fpct(group ? shareOfParent : shareOfAll)}
-              info={tileInfo}
-              hovered={hover?.title === tileInfo.title}
-              showIcons={showIcons}
-              onHover={setHover}
-              onActivate={it.onClick ?? (() => setHover(tileInfo))}
-              onHistory={() => it.histRef && openHist({ ...it.histRef, title: it.label, ...rect, bg, fg })}
-            />
-          );
-        })}
+      <div className="stage">
+        {overview && B && year != null && (
+          <Overview years={yrs} budgets={budgets} year={year} {...prices} onSelectYear={selectYear} onHover={setHover} />
+        )}
 
-        {hist && year != null && (
-          <History
-            hist={hist}
-            open={histOpen}
+        {!overview && group && year != null && multiYear && (
+          <FocusPanel
             years={yrs}
             budgets={budgets}
             year={year}
-            factorOf={factorOf}
-            nominal={nominal}
-            priceNote={priceNote}
-            nominalNote={nominalNote}
-            onClose={closeHist}
+            view={view}
+            gkey={group.key}
+            row={focusedRow?.key ?? null}
+            kicker={focusedRow ? `${group.code} · ${group.title}` : `${group.code} · ${T.kind}`}
+            title={focusedRow ? focusedRow.title : group.title}
+            bg={panelColor.bg}
+            fg={panelColor.fg}
+            {...prices}
+            onSelectYear={selectYear}
+            onHover={setHover}
           />
+        )}
+
+        {!overview && (
+          <div className="map" ref={mapRef}>
+            {rects.map(({ it, x, y, w, h }) => {
+              const { bg, fg } = colorOf(it, !!group);
+              const shareOfParent = (it.v / parentTotal) * 100;
+              const shareOfAll = (it.v / gross) * 100;
+              const tileInfo: Info = {
+                title: `${it.code ? `${it.code} · ` : ""}${it.label}`,
+                value: fmd(it.v),
+                share: group
+                  ? `${fpct(shareOfParent)} av ${group.title.toLowerCase()} · ${fpct(shareOfAll)} av ${T.all}`
+                  : `${fpct(shareOfAll)} av ${T.all}`,
+                hint: it.drill ? "Klicka för att utforska" : "Klicka för att visa historik",
+              };
+              return (
+                <Tile
+                  key={it.key}
+                  it={it}
+                  rect={{
+                    left: `${(x / W) * 100}%`,
+                    top: `${(y / H) * 100}%`,
+                    width: `${(w / W) * 100}%`,
+                    height: `${(h / H) * 100}%`,
+                  }}
+                  w={w}
+                  h={h}
+                  bg={bg}
+                  fg={fg}
+                  share={fpct(group ? shareOfParent : shareOfAll)}
+                  info={tileInfo}
+                  hovered={hover?.title === tileInfo.title}
+                  focused={!!focusedRow && it.key === focusedRow.key}
+                  onHover={setHover}
+                  onActivate={it.onClick ?? (() => setHover(tileInfo))}
+                />
+              );
+            })}
+          </div>
         )}
       </div>
 

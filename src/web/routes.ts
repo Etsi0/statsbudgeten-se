@@ -1,0 +1,76 @@
+/**
+ * URL ⇄ app state.
+ *
+ *   /                            overview: inkomster vs utgifter per year
+ *   /utgifter                    treemap of all utgiftsområden (/inkomster: inkomsttyper)
+ *   /utgifter/6                  utgiftsområde 6: its history graph above its anslag
+ *   /utgifter/6/3                …with anslag 3 focused (the graph shows that anslag)
+ *   /utgifter/6/ovriga           the "Övriga" bundle of the group
+ *   /utgifter/6/ovriga/23        …with anslag 23 focused
+ *   /inkomster/1000/1111         inkomsttyp 1000 with inkomsttitel 1111 focused
+ *   …?year=2024                  budget year (omitted for the latest year)
+ *   …?inflation=1                amounts adjusted for inflation
+ */
+
+export type View = "exp" | "rev";
+export type Mode = "overview" | "explore";
+
+export type Route = {
+  mode: Mode;
+  view: View;
+  /** null until the data has loaded and the latest year is known. */
+  year: number | null;
+  /** Utgiftsområde number or inkomsttyp code (id_start). */
+  group: number | null;
+  rest: boolean;
+  /** Focused row id within the group. */
+  item: number | null;
+  real: boolean;
+};
+
+const VIEW_SLUG: Record<View, string> = { exp: "utgifter", rev: "inkomster" };
+const SLUG_VIEW: Record<string, View> = { utgifter: "exp", inkomster: "rev" };
+
+const parseYear = (s: string | null | undefined): number | null => (s && /^\d{4}$/.test(s) ? Number(s) : null);
+const parseNat = (s: string | undefined): number | null => (s && /^\d+$/.test(s) ? Number(s) : null);
+
+export function parseRoute(url: URL): Route {
+  const parts = url.pathname.split("/").filter(Boolean);
+  const real = url.searchParams.get("inflation") === "1";
+  const year = parseYear(url.searchParams.get("year"));
+  const view = SLUG_VIEW[parts[0] ?? ""];
+  if (!view) return { mode: "overview", view: "exp", year, group: null, rest: false, item: null, real };
+  const group = parseNat(parts[1]);
+  if (group == null) return { mode: "explore", view, year, group: null, rest: false, item: null, real };
+  let i = 2;
+  let rest = false;
+  if (parts[i] === "ovriga") {
+    rest = true;
+    i++;
+  }
+  return { mode: "explore", view, year, group, rest, item: parseNat(parts[i]), real };
+}
+
+/** Path + query for a route. `latest` lets the URL omit the default year. */
+export function buildUrl(r: Route, latest: number | null): string {
+  let path = "/";
+  if (r.mode === "explore") {
+    const parts = [VIEW_SLUG[r.view]];
+    if (r.group != null) {
+      parts.push(String(r.group));
+      if (r.rest) parts.push("ovriga");
+      if (r.item != null) parts.push(String(r.item));
+    }
+    path = `/${parts.join("/")}`;
+  }
+  const q = new URLSearchParams();
+  if (r.year != null && r.year !== latest) q.set("year", String(r.year));
+  if (r.real) q.set("inflation", "1");
+  const s = q.toString();
+  return s ? `${path}?${s}` : path;
+}
+
+/** The app's internal group key for a URL group number. */
+export const groupKey = (view: View, group: number) => (view === "rev" ? `ink${group}` : `uo${group}`);
+/** The URL group number for an internal group key such as "uo6" or "ink1000". */
+export const groupNumber = (key: string) => Number(key.replace(/^\D+/, ""));

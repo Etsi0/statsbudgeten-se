@@ -47,7 +47,7 @@ button {
 
 .app {
   height: 100vh;
-  min-height: 520px;
+  min-height: 640px;
   display: flex;
   flex-direction: column;
   gap: 14px;
@@ -145,6 +145,54 @@ button {
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.14);
 }
 
+/* ---- Inflation toggle ---- */
+
+.switch {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px 4px 4px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--secondary);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.switch:hover {
+  background: var(--track);
+}
+.switch .knob {
+  position: relative;
+  width: 30px;
+  height: 18px;
+  border-radius: 999px;
+  background: var(--separator);
+  transition: background 0.2s;
+}
+.switch .knob::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--surface);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+  transition: transform 0.2s var(--ease);
+}
+.switch.on {
+  color: var(--ink);
+}
+.switch.on .knob {
+  background: var(--ink);
+}
+.switch.on .knob::after {
+  transform: translateX(12px);
+}
+
 /* ---- Breadcrumb row ---- */
 
 .crumb-row {
@@ -194,23 +242,15 @@ button {
   font-weight: 300;
 }
 
-.hist-pill {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  padding: 6px 12px 6px 9px;
-  border: 0;
-  border-radius: 999px;
-  color: var(--ink);
-  font-weight: 600;
-  font-size: 13px;
-  cursor: pointer;
-}
-.hist-pill:hover {
-  filter: brightness(0.96);
-}
+/* ---- Stage: chart panel and/or treemap ---- */
 
-/* ---- Treemap ---- */
+.stage {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
 
 .map {
   position: relative;
@@ -220,6 +260,8 @@ button {
   overflow: hidden;
   background: var(--track);
 }
+
+/* ---- Tiles ---- */
 
 .tile {
   position: absolute;
@@ -238,13 +280,15 @@ button {
     width 0.45s var(--ease),
     height 0.45s var(--ease),
     background-color 0.3s,
-    filter 0.15s;
+    filter 0.15s,
+    box-shadow 0.15s;
 }
 .tile.hovered {
   filter: brightness(1.06) saturate(1.1);
 }
+.tile.focused,
 .tile:focus-visible {
-  box-shadow: inset 0 0 0 2px currentColor;
+  box-shadow: inset 0 0 0 3px currentColor;
 }
 
 .tile .head {
@@ -290,48 +334,24 @@ button {
   white-space: nowrap;
 }
 
-.tile .icons {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  display: flex;
-  gap: 4px;
-}
+/* ---- Chart panels: the overview and the group/posting history ---- */
 
-.icon-btn {
-  border-radius: 50%;
-  border: 0;
-  display: grid;
-  place-items: center;
-  cursor: pointer;
-  padding: 0;
-  background: var(--icon-bg);
-}
-.icon-btn:hover {
-  background: rgba(255, 255, 255, 0.75);
-  color: var(--ink);
-}
-.tile .icon-btn {
-  width: 30px;
-  height: 30px;
-}
-
-/* ---- History overlay ---- */
-
-.hist {
-  position: absolute;
+.panel {
+  position: relative;
   border: 2px solid var(--page);
+  border-radius: 14px;
   overflow: hidden;
-  z-index: 10;
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.12);
-  transition:
-    left 0.5s var(--ease),
-    top 0.5s var(--ease),
-    width 0.5s var(--ease),
-    height 0.5s var(--ease),
-    border-radius 0.5s;
+  transition: background-color 0.3s;
 }
-.hist .content {
+.panel.overview {
+  flex: 1;
+  min-height: 0;
+}
+.panel.focus {
+  flex: 0 0 auto;
+  height: clamp(220px, 36vh, 340px);
+}
+.panel .content {
   position: absolute;
   inset: 0;
   padding: 22px 26px 18px;
@@ -339,24 +359,28 @@ button {
   flex-direction: column;
   gap: 16px;
 }
-.hist .top {
+.panel.focus .content {
+  padding: 16px 22px 12px;
+  gap: 8px;
+}
+.panel .top {
   display: flex;
   align-items: flex-start;
   gap: 16px;
 }
-.hist .heading {
+.panel .heading {
   display: flex;
   flex-direction: column;
   gap: 2px;
   margin-right: auto;
   min-width: 0;
 }
-.hist .kicker {
+.panel .kicker {
   font-size: 12px;
   font-weight: 600;
   opacity: 0.7;
 }
-.hist .name {
+.panel .name {
   font-size: 26px;
   font-weight: 700;
   letter-spacing: -0.02em;
@@ -364,45 +388,68 @@ button {
   text-wrap: pretty;
   hyphens: auto;
 }
-.hist .delta {
+.panel.focus .name {
+  font-size: 20px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.panel .legend {
+  display: flex;
+  gap: 14px;
+  margin-top: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--secondary);
+}
+.panel .legend > span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.panel .legend .swatch {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+}
+.panel .delta {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
   gap: 0;
   font-variant-numeric: tabular-nums;
+  flex: none;
 }
-.hist .delta .pct {
+.panel .delta .pct {
   font-size: 26px;
   font-weight: 700;
   letter-spacing: -0.02em;
 }
-.hist .delta .abs {
+.panel.focus .delta .pct {
+  font-size: 20px;
+}
+.panel .delta .abs {
   font-size: 13px;
   font-weight: 550;
   opacity: 0.75;
 }
-.hist .close {
-  width: 36px;
-  height: 36px;
-  flex: none;
-}
-.hist .close:hover {
-  background: rgba(255, 255, 255, 0.8);
-}
 
-.hist .chart {
+.panel .chart {
   position: relative;
   flex: 1;
   min-height: 0;
   margin: 24px 8px 30px 52px;
 }
-.hist .gridline {
+.panel.focus .chart {
+  margin: 20px 8px 26px 52px;
+}
+.panel .gridline {
   position: absolute;
   left: 0;
   right: 0;
   border-top: 1px solid var(--grid-color);
 }
-.hist .gridline span {
+.panel .gridline span {
   position: absolute;
   right: 100%;
   top: -8px;
@@ -412,26 +459,36 @@ button {
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
-.hist .reveal {
+.panel .band {
+  position: absolute;
+  top: -8px;
+  bottom: -8px;
+  border-left: 1px dashed rgba(11, 11, 11, 0.3);
+}
+.panel .reveal {
   position: absolute;
   inset: -4px;
   transition: clip-path 0.9s cubic-bezier(0.4, 0, 0.2, 1);
 }
-.hist .reveal svg {
+.panel .reveal svg {
   position: absolute;
   inset: 4px;
   width: calc(100% - 8px);
   height: calc(100% - 8px);
   overflow: visible;
 }
-.hist .dot {
+.panel .dot {
   position: absolute;
   display: flex;
   flex-direction: column;
   align-items: center;
+  border: 0;
+  background: none;
+  padding: 0;
+  cursor: pointer;
   transition: transform 0.35s cubic-bezier(0.3, 1.6, 0.5, 1);
 }
-.hist .dot .val {
+.panel .dot .val {
   position: absolute;
   bottom: calc(100% + 6px);
   font-size: 13px;
@@ -439,17 +496,41 @@ button {
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
-.hist .dot .mark {
+.panel .dot.below .val {
+  bottom: auto;
+  top: calc(100% + 6px);
+}
+.panel .dot .mark {
   border-radius: 50%;
   border: 3px solid currentColor;
 }
-.hist .year {
+.panel .dot:focus-visible .mark {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+.panel .year {
   position: absolute;
   top: calc(100% + 10px);
   transform: translateX(-50%);
+  border: 0;
+  background: none;
+  padding: 0;
+  cursor: pointer;
   font-size: 13px;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+}
+.panel .year:hover,
+.panel .year:focus-visible {
+  opacity: 1 !important;
+}
+.panel .note {
+  height: 16px;
+  font-size: 12px;
+  opacity: 0.65;
+  display: flex;
+  justify-content: flex-end;
+  align-items: flex-end;
 }
 
 /* ---- Footer info bar ---- */
@@ -478,56 +559,4 @@ button {
 }
 .info .hint {
   color: var(--muted);
-}
-
-.hist .note {
-  height: 16px;
-}
-
-/* ---- Inflation toggle ---- */
-
-.switch {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 4px 10px 4px 4px;
-  border: 0;
-  border-radius: 999px;
-  background: transparent;
-  color: var(--secondary);
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-}
-.switch:hover {
-  background: var(--track);
-}
-.switch .knob {
-  position: relative;
-  width: 30px;
-  height: 18px;
-  border-radius: 999px;
-  background: var(--separator);
-  transition: background 0.2s;
-}
-.switch .knob::after {
-  content: "";
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  background: var(--surface);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
-  transition: transform 0.2s var(--ease);
-}
-.switch.on {
-  color: var(--ink);
-}
-.switch.on .knob {
-  background: var(--ink);
-}
-.switch.on .knob::after {
-  transform: translateX(12px);
 }
