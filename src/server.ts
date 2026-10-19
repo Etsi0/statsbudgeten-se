@@ -61,17 +61,18 @@ function loadData(): Promise<Data> {
 const images = new Map<string, Uint8Array>();
 const IMAGE_CACHE = 64;
 
-/** /social/<page>.png: the chart the page shows, as a 1200×630 PNG. */
+/** /social/<page>.png: the chart the page shows, as a PNG in the format the query asks for. */
 async function socialImage(req: Request): Promise<Response> {
   const url = new URL(req.url);
-  const route = routeForImage(url);
-  if (!route) return new Response("Not found", { status: 404 });
+  const image = routeForImage(url);
+  if (!image) return new Response("Not found", { status: 404 });
+  const { route, format } = image;
   const data = await loadData();
   // Equivalent URLs (say, the latest year spelled out) share one image.
-  const key = buildUrl(route, data.years[0] ?? null);
+  const key = `${format} ${buildUrl(route, data.years[0] ?? null)}`;
   let png = images.get(key);
   if (!png) {
-    const rendered = renderPng(route, data);
+    const rendered = renderPng(route, data, format);
     if (!rendered) return new Response("Not found", { status: 404 });
     png = rendered;
     if (images.size >= IMAGE_CACHE) images.delete(images.keys().next().value!);

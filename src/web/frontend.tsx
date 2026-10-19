@@ -16,6 +16,7 @@ import { aboutContent } from "./content.macro" with { type: "macro" };
 import type { Block, Inline } from "../markdown";
 import { buildIndex, search as runSearch, type SearchHit } from "../search";
 import { buildUrl, groupKey, groupNumber, parseRoute, type Mode, type Unit, type View } from "./routes";
+import { FORMATS, FORMAT_KEYS, socialImagePath, type Format } from "./share";
 import {
   COPY,
   INK,
@@ -658,6 +659,123 @@ function Search({ budget, year, q, onChange, onPick }: SearchProps) {
 
 // ---- App ----------------------------------------------------------------------
 
+// ---- Share dialog ---------------------------------------------------------------
+
+type ShareProps = {
+  open: boolean;
+  onClose: () => void;
+  /** The page's title, for the share sheet and the file name. */
+  title: string;
+};
+
+/**
+ * Share the chart on screen: pick a format, see the image the server draws
+ * for this URL, and share it through the system share sheet where there is
+ * one (phones), or download it. The page link can always be copied.
+ */
+function Share({ open, onClose, title }: ShareProps) {
+  const ref = useRef<HTMLDialogElement>(null);
+  const [format, setFormat] = useState<Format>("square");
+  const [loaded, setLoaded] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const pageUrl = window.location.href;
+  const imagePath = socialImagePath(new URL(pageUrl), format);
+  const canShareFiles = typeof navigator.canShare === "function" && navigator.canShare({ files: [new File([], "x.png", { type: "image/png" })] });
+
+  // A native dialog: modal, with Esc and a focus trap for free.
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    if (open && !el.open) {
+      el.showModal();
+      setNote(null);
+    } else if (!open && el.open) el.close();
+  }, [open]);
+  useEffect(() => setLoaded(false), [format, imagePath]);
+
+  const fileName = `statsbudgeten-${title.toLowerCase().replace(/[^a-z0-9åäö]+/g, "-").replace(/^-|-$/g, "")}-${format}.png`;
+
+  const shareImage = async () => {
+    if (!imagePath) return;
+    setBusy(true);
+    try {
+      const blob = await (await fetch(imagePath)).blob();
+      const file = new File([blob], fileName, { type: "image/png" });
+      const withLink = { files: [file], title, text: `${title} – Statsbudgeten`, url: pageUrl };
+      // Some browsers refuse a link next to files; then the text carries it.
+      const data = navigator.canShare?.(withLink) ? withLink : { files: [file], title, text: `${title} – ${pageUrl}` };
+      await navigator.share(data);
+      trackEvent("share", { method: "share_sheet", format });
+    } catch (e) {
+      if ((e as Error).name !== "AbortError") setNote("Kunde inte dela, ladda ner bilden i stället.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const copyLink = async () => {
+    try {
+      await navigator.clipboard.writeText(pageUrl);
+      setNote("Länken är kopierad.");
+      trackEvent("share", { method: "copy_link", format });
+    } catch {
+      setNote(pageUrl);
+    }
+  };
+
+  const spec = FORMATS[format];
+  return (
+    <dialog
+      ref={ref}
+      className="share"
+      aria-label="Dela"
+      onClose={onClose}
+      onClick={(e) => {
+        // A click on the backdrop lands on the dialog itself.
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div className="share-head">
+        <span className="share-title">Dela</span>
+        <span className="share-page">{title}</span>
+        <button type="button" className="icon-btn" aria-label="Stäng" onClick={onClose}>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden>
+            <path d="M6 6l12 12M18 6L6 18" />
+          </svg>
+        </button>
+      </div>
+      <div className="seg share-formats" role="radiogroup" aria-label="Format">
+        {FORMAT_KEYS.map((k) => (
+          <button key={k} type="button" role="radio" aria-checked={k === format} className={k === format ? "active" : ""} onClick={() => setFormat(k)}>
+            {FORMATS[k].label}
+            <span className="ratio">{FORMATS[k].ratio}</span>
+          </button>
+        ))}
+      </div>
+      <div className={`share-preview${loaded ? " loaded" : ""}`} style={{ aspectRatio: `${spec.w} / ${spec.h}` }}>
+        {open && imagePath && <img src={imagePath} alt={`${title}, ${spec.label} ${spec.ratio}`} width={spec.w} height={spec.h} onLoad={() => setLoaded(true)} />}
+      </div>
+      <div className="share-actions">
+        {canShareFiles && (
+          <button type="button" className="primary" disabled={busy || !loaded} onClick={shareImage}>
+            Dela bild
+          </button>
+        )}
+        <a className={canShareFiles ? "" : "primary"} href={imagePath ?? "#"} download={fileName} onClick={() => trackEvent("share", { method: "download", format })}>
+          Ladda ner
+        </a>
+        <button type="button" onClick={copyLink}>
+          Kopiera länk
+        </button>
+      </div>
+      <div className="share-note" role="status">
+        {note ?? `${spec.w} × ${spec.h} px`}
+      </div>
+    </dialog>
+  );
+}
+
 const initialRoute = parseRoute(new URL(window.location.href));
 
 function App() {
@@ -676,6 +794,7 @@ function App() {
   const [q, setQ] = useState(initialRoute.q);
   const [hover, setHover] = useState<Info | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
   /** The settings popover on desktop (inflation, year, unit). */
   const [settingsOpen, setSettingsOpen] = useState(false);
   const settingsRef = useRef<HTMLDivElement>(null);
@@ -766,6 +885,7 @@ function App() {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
       if (menuOpen) return setMenuOpen(false);
+      if (shareOpen) return; // the dialog closes itself
       if (settingsOpen) return setSettingsOpen(false);
       if (zoomKey != null) return setZoomKey(null);
       if (mode === "about") return showOverview();
@@ -779,7 +899,7 @@ function App() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [menuOpen, settingsOpen, zoomKey, mode, q, itemKey, pendingItem, rest]);
+  }, [menuOpen, shareOpen, settingsOpen, zoomKey, mode, q, itemKey, pendingItem, rest]);
 
   // The settings popover closes on a click anywhere outside it.
   useEffect(() => {
@@ -1300,7 +1420,16 @@ function App() {
             </>
           )}
         </nav>
+        {!about && !searching && B && (
+          <button type="button" className="share-toggle" onClick={() => setShareOpen(true)} title="Dela som bild eller länk">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              <path d="M12 3v13M7 8l5-5 5 5M5 14v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5" />
+            </svg>
+            <span>Dela</span>
+          </button>
+        )}
       </header>
+      <Share open={shareOpen} onClose={() => setShareOpen(false)} title={pageTitle} />
 
       <div className="stage" inert={menuOpen || undefined}>
         {about && <About />}

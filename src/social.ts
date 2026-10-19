@@ -1,10 +1,8 @@
 /**
- * Share images: the chart a page shows, drawn as a 1200×630 PNG for link
- * previews (og:image). Every app URL maps to an image URL and back:
- *
- *   /                                  → /social/oversikt.png
- *   /utgifter                          → /social/utgifter.png
- *   /utgifter/6/3?year=2024&inflation=1 → /social/utgifter/6/3.png?year=2024&inflation=1
+ * Share images: the chart a page shows, drawn as a PNG. The "link" format is
+ * the 1200×630 Open Graph preview (og:image); square, portrait and story are
+ * for posting the chart itself, see src/web/share.ts for the formats and the
+ * page ⇄ image URL mapping.
  *
  * The scene is built from the same model as the browser app (src/web/model.ts)
  * and written as SVG, then rasterised with resvg using the bundled Inter font,
@@ -45,43 +43,19 @@ import {
   type Prices,
   type Series,
 } from "./web/model";
-import { buildUrl, groupKey, parseRoute, type Route } from "./web/routes";
+import { buildUrl, groupKey, type Route } from "./web/routes";
+import { FORMATS, type Format } from "./web/share";
 
-export const WIDTH = 1200;
-export const HEIGHT = 630;
+export { FORMATS, parseFormat, routeForImage, socialImagePath, type Format } from "./web/share";
+/** The link preview's size. */
+export const WIDTH = FORMATS.link.w;
+export const HEIGHT = FORMATS.link.h;
 
 /** Everything the renderer needs: every budget year and the inflation rates. */
 export type Data = { years: number[]; budgets: Record<number, BudgetJson>; rates: InflationRates };
 
 const SECONDARY = "#52514e";
 const MUTED = "#898781";
-
-// ---- URL mapping -----------------------------------------------------------------
-
-const IMAGE_PREFIX = "/social/";
-const OVERVIEW_IMAGE = "oversikt";
-
-/** The image path for an app URL, or null for pages that have no chart. */
-export function socialImagePath(url: URL): string | null {
-  const route = parseRoute(url);
-  if (route.mode === "about" || route.mode === "search") return null;
-  const app = buildUrl(route, null);
-  const [path, query] = app.split("?") as [string, string?];
-  const name = path === "/" ? OVERVIEW_IMAGE : path.slice(1);
-  return `${IMAGE_PREFIX}${name}.png${query ? `?${query}` : ""}`;
-}
-
-/** The app route an image URL stands for, or null if it is not an image URL. */
-export function routeForImage(url: URL): Route | null {
-  if (!url.pathname.startsWith(IMAGE_PREFIX) || !url.pathname.endsWith(".png")) return null;
-  const name = url.pathname.slice(IMAGE_PREFIX.length, -".png".length);
-  if (!/^[\w/]+$/.test(name)) return null;
-  const path = name === OVERVIEW_IMAGE ? "/" : `/${name}`;
-  const route = parseRoute(new URL(`${path}${url.search}`, "http://x"));
-  if (route.mode !== "overview" && route.mode !== "explore") return null;
-  if (route.mode === "overview" && path !== "/") return null;
-  return route;
-}
 
 // ---- The scene ----------------------------------------------------------------------
 
@@ -472,14 +446,20 @@ function treemap(box: Box, s: Scene): string {
 
 // ---- The page ------------------------------------------------------------------------
 
-/** The share image for a route as SVG, or null when there is no data to draw. */
-export function renderSvg(route: Route, data: Data): string | null {
+/**
+ * The share image for a route as SVG on the format's canvas, or null when
+ * there is no data to draw. The link format is landscape; the others stack
+ * the same parts taller and end with the page's address, since a posted
+ * image carries no link of its own.
+ */
+export function renderSvg(route: Route, data: Data, format: Format = "link"): string | null {
   const s = resolve(route, data);
   if (!s) return null;
   const T = COPY[route.view];
   const { year } = s;
   const nominal = s.display.unit === "kr" ? s.prices.nominal : () => false;
   const priceNote = s.display.unit === "kr" ? s.prices.priceNote : "";
+  const { w: WIDTH, h: HEIGHT } = FORMATS[format].canvas;
   const pad = 36;
   const out: string[] = [];
   out.push(`<rect width="${WIDTH}" height="${HEIGHT}" fill="${PAGE}"/>`);
@@ -488,7 +468,14 @@ export function renderSvg(route: Route, data: Data): string | null {
   out.push(text(brandX, pad + 29, "Statsbudgeten", { size: 30, weight: 700, fill: INK, spacing: "-0.6" }));
   out.push(text(brandX + textWidth("Statsbudgeten", 30, 700) - 1, pad + 29, ".se", { size: 30, weight: 700, fill: MUTED, spacing: "-0.6" }));
 
-  const body: Box = { x: pad, y: pad + 36 + 24, w: WIDTH - pad * 2, h: HEIGHT - pad * 2 - 36 - 24 };
+  // Posted images end with the page's address.
+  const footer = format === "link" ? 0 : 30;
+  if (footer) {
+    const latest = s.years[s.years.length - 1] ?? null;
+    const address = `statsbudgeten.se${buildUrl({ ...route, q: "" }, latest).replace(/^\/$/, "")}`;
+    out.push(text(WIDTH / 2, HEIGHT - pad + 4, address, { size: 15, weight: 600, fill: SECONDARY, anchor: "middle" }));
+  }
+  const body: Box = { x: pad, y: pad + 36 + 24, w: WIDTH - pad * 2, h: HEIGHT - pad * 2 - 36 - 24 - footer };
   if (route.mode === "overview") {
     out.push(text(WIDTH - pad, pad + 27, `Budgetår ${year}${nominal(year) ? "*" : ""}`, { size: 16, weight: 600, fill: SECONDARY, anchor: "end" }));
     out.push(overviewPanel(body, s));
@@ -502,7 +489,7 @@ export function renderSvg(route: Route, data: Data): string | null {
   } else {
     out.push(text(WIDTH - pad, pad + 27, `${T.label} ${year}${nominal(year) ? "*" : ""}`, { size: 16, weight: 600, fill: SECONDARY, anchor: "end" }));
     const multiYear = s.years.length > 1;
-    const panelH = multiYear ? 232 : 0;
+    const panelH = multiYear ? Math.round(Math.min(320, Math.max(232, body.h * 0.36))) : 0;
     if (multiYear) out.push(focusPanel({ x: body.x, y: body.y, w: body.w, h: panelH }, s));
     const mapY = body.y + panelH + (multiYear ? 8 : 0);
     out.push(treemap({ x: body.x, y: mapY, w: body.w, h: body.y + body.h - mapY }, s));
@@ -515,10 +502,10 @@ ${out.join("\n")}
 const fontDir = new URL("../assets/fonts/", import.meta.url).pathname;
 const FONTS = ["Inter-Regular.ttf", "Inter-SemiBold.ttf", "Inter-Bold.ttf"].map((f) => `${fontDir}${f}`);
 
-/** The share image for a route as PNG bytes, or null when there is no data to draw. */
-export function renderPng(route: Route, data: Data): Uint8Array | null {
-  const svg = renderSvg(route, data);
+/** The share image for a route as PNG bytes in the format's size, or null when there is no data to draw. */
+export function renderPng(route: Route, data: Data, format: Format = "link"): Uint8Array | null {
+  const svg = renderSvg(route, data, format);
   if (!svg) return null;
-  const r = new Resvg(svg, { font: { fontFiles: FONTS, loadSystemFonts: false, defaultFontFamily: "Inter" } });
+  const r = new Resvg(svg, { fitTo: { mode: "width", value: FORMATS[format].w }, font: { fontFiles: FONTS, loadSystemFonts: false, defaultFontFamily: "Inter" } });
   return r.render().asPng();
 }

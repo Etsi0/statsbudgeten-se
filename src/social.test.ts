@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { BudgetJsonSchema, type BudgetJson } from "../types/BudgetJsonSchema";
 import { InflationSchema } from "../types/InflationSchema";
-import { HEIGHT, WIDTH, cssColor, pageDescription, pageTitle, renderPng, renderSvg, routeForImage, socialImagePath, textWidth, type Data } from "./social";
+import { FORMATS, HEIGHT, WIDTH, cssColor, pageDescription, pageTitle, renderPng, renderSvg, textWidth, type Data } from "./social";
+import { FORMAT_KEYS } from "./web/share";
 import { parseRoute } from "./web/routes";
 
 const root = new URL("..", import.meta.url).pathname;
@@ -26,31 +27,6 @@ function pngSize(png: Uint8Array) {
   const dv = new DataView(png.buffer, png.byteOffset, png.byteLength);
   return { w: dv.getUint32(16), h: dv.getUint32(20) };
 }
-
-describe("image URLs", () => {
-  test("every chart page has an image, about and search do not", () => {
-    expect(socialImagePath(url("/"))).toBe("/social/oversikt.png");
-    expect(socialImagePath(url("/utgifter"))).toBe("/social/utgifter.png");
-    expect(socialImagePath(url("/inkomster/1000/1111"))).toBe("/social/inkomster/1000/1111.png");
-    expect(socialImagePath(url("/utgifter/6/ovriga/23?year=2024&inflation=1&andel=inkomster"))).toBe("/social/utgifter/6/ovriga/23.png?year=2024&inflation=1&andel=inkomster");
-    expect(socialImagePath(url("/om"))).toBeNull();
-    expect(socialImagePath(url("/sok?q=försvar"))).toBeNull();
-  });
-
-  test("an image URL maps back to its page", () => {
-    for (const page of ["/", "/utgifter", "/inkomster/1000/1111", "/utgifter/6/ovriga/23?year=2024&inflation=1&andel=inkomster"]) {
-      const image = socialImagePath(url(page))!;
-      expect(routeForImage(url(image))).toEqual(parseRoute(url(page)));
-    }
-  });
-
-  test("other paths under /social/ are not images", () => {
-    expect(routeForImage(url("/social/om.png"))).toBeNull();
-    expect(routeForImage(url("/social/oversikt.jpg"))).toBeNull();
-    expect(routeForImage(url("/social/../social.png"))).toBeNull();
-    expect(routeForImage(url("/social/utgifter/6.png/extra.png"))).toBeNull();
-  });
-});
 
 describe("titles", () => {
   test("mirror the app's document title", () => {
@@ -83,6 +59,15 @@ describe("rendering", () => {
     expect(png).not.toBeNull();
     expect([...png!.slice(0, 8)]).toEqual([137, 80, 78, 71, 13, 10, 26, 10]);
     expect(pngSize(png!)).toEqual({ w: WIDTH, h: HEIGHT });
+  });
+
+  test.each(FORMAT_KEYS)("%s comes out in its own size, with the page's address on posted formats", (format) => {
+    const route = parseRoute(url("/utgifter/6?year=2024"));
+    const png = renderPng(route, data, format)!;
+    expect(pngSize(png)).toEqual({ w: FORMATS[format].w, h: FORMATS[format].h });
+    const svg = renderSvg(route, data, format)!;
+    if (format === "link") expect(svg).not.toContain("statsbudgeten.se/utgifter");
+    else expect(svg).toContain("statsbudgeten.se/utgifter/6?year=2024");
   });
 
   test("a focused posting gets its history and a ring on its tile", () => {
