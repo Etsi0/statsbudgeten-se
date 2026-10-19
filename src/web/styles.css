@@ -313,6 +313,15 @@ button {
 .tile:focus-visible {
   box-shadow: inset 0 0 0 3px currentColor;
 }
+.tile.zoomed {
+  z-index: 5;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.22);
+}
+.tile.zoomed.focused {
+  box-shadow:
+    inset 0 0 0 3px currentColor,
+    0 10px 40px rgba(0, 0, 0, 0.22);
+}
 
 .tile .head {
   display: flex;
@@ -788,7 +797,12 @@ button {
   .panel .infobox .ib-diff {
     text-align: left;
   }
+  /* Fixed height: the text changes on every tap, and a footer that grows or
+     shrinks would move the treemap under the finger mid-tap. */
   .info {
+    height: 64px;
+    overflow: hidden;
+    align-content: flex-start;
     gap: 2px 12px;
     font-size: 13px;
   }

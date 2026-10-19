@@ -541,18 +541,23 @@ type TileProps = {
   info: Info;
   hovered: boolean;
   focused: boolean;
+  /** Expanded in place so a tile that was too small to read shows its text. */
+  zoomed: boolean;
   onHover: (info: Info | null) => void;
   onActivate: () => void;
 };
 
-function Tile({ it, rect, w, h, bg, fg, share, info, hovered, focused, onHover, onActivate }: TileProps) {
+/** A tile this small can't carry its label; the first click zooms it instead of acting. */
+const readable = (w: number, h: number) => w > 84 && h > 54;
+
+function Tile({ it, rect, w, h, bg, fg, share, info, hovered, focused, zoomed, onHover, onActivate }: TileProps) {
   const minD = Math.min(w, h);
   const area = w * h;
-  const showLabel = w > 84 && h > 54;
-  const showValue = w > 70 && h > 130;
-  const shareSize = Math.round(Math.max(18, Math.min(64, Math.sqrt(area) / 5.2)));
-  const titleSize = minD > 220 ? 18 : minD > 130 ? 15 : w < 130 ? 12 : 13;
-  const clamp = h > 170 ? 3 : h > 80 ? 2 : 1;
+  const showLabel = zoomed || readable(w, h);
+  const showValue = zoomed || (w > 70 && h > 130);
+  const shareSize = zoomed ? 28 : Math.round(Math.max(18, Math.min(64, Math.sqrt(area) / 5.2)));
+  const titleSize = zoomed ? 15 : minD > 220 ? 18 : minD > 130 ? 15 : w < 130 ? 12 : 13;
+  const clamp = zoomed ? 3 : h > 170 ? 3 : h > 80 ? 2 : 1;
 
   return (
     <div
@@ -560,15 +565,18 @@ function Tile({ it, rect, w, h, bg, fg, share, info, hovered, focused, onHover, 
       tabIndex={0}
       aria-label={`${info.title}, ${info.value}`}
       aria-pressed={focused || undefined}
-      className={`tile${hovered ? " hovered" : ""}${focused ? " focused" : ""}`}
+      className={`tile${hovered ? " hovered" : ""}${focused ? " focused" : ""}${zoomed ? " zoomed" : ""}`}
       style={{
         ...rect,
         background: bg,
         color: fg,
-        padding: minD > 160 ? "14px 16px" : "8px 10px",
+        padding: zoomed || minD > 160 ? "14px 16px" : "8px 10px",
         cursor: it.drill ? "zoom-in" : "pointer",
       }}
-      onClick={onActivate}
+      onClick={(e) => {
+        e.stopPropagation();
+        onActivate();
+      }}
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
@@ -614,6 +622,8 @@ function App() {
   const [realWanted, setReal] = useState(initialRoute.real);
   const [hover, setHover] = useState<Info | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  /** Key of a too-small tile that has been expanded in place, see `readable`. */
+  const [zoomKey, setZoomKey] = useState<string | null>(null);
   const [rates, setRates] = useState<Record<string, number>>({});
   const [size, setSize] = useState({ W: 1000, H: 600 });
   const [error, setError] = useState(false);
@@ -695,6 +705,7 @@ function App() {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
       if (menuOpen) return setMenuOpen(false);
+      if (zoomKey != null) return setZoomKey(null);
       if (itemKey != null || pendingItem != null) {
         setItemKey(null);
         setPendingItem(null);
@@ -704,7 +715,9 @@ function App() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [menuOpen, itemKey, pendingItem, rest]);
+  }, [menuOpen, zoomKey, itemKey, pendingItem, rest]);
+  // A zoomed tile belongs to one level; leave it when the level changes.
+  useEffect(() => setZoomKey(null), [mode, view, year, uo, rest]);
 
   const clearFocus = () => {
     setItemKey(null);
@@ -1087,9 +1100,18 @@ function App() {
         )}
 
         {!overview && (
-          <div className="map" ref={mapRef}>
-            {rects.map(({ it, x, y, w, h }) => {
+          <div className="map" ref={mapRef} onClick={() => setZoomKey(null)}>
+            {rects.map(({ it, x: x0, y: y0, w: w0, h: h0 }) => {
               const { bg, fg } = colorOf(it, !!group);
+              const zoomed = zoomKey === it.key;
+              // Expand a zoomed tile to a readable size, kept inside the map.
+              let [x, y, w, h] = [x0, y0, w0, h0];
+              if (zoomed) {
+                w = Math.min(W, Math.max(w0, 230));
+                h = Math.min(H, Math.max(h0, 150));
+                x = Math.max(0, Math.min(W - w, x0 - (w - w0) / 2));
+                y = Math.max(0, Math.min(H - h, y0 - (h - h0) / 2));
+              }
               const shareOfParent = (it.v / parentTotal) * 100;
               const shareOfAll = (it.v / gross) * 100;
               const tileInfo: Info = {
@@ -1098,7 +1120,24 @@ function App() {
                 share: group
                   ? `${fpct(shareOfParent)} av ${group.title.toLowerCase()} · ${fpct(shareOfAll)} av ${T.all}`
                   : `${fpct(shareOfAll)} av ${T.all}`,
-                hint: it.drill ? "Klicka för att utforska" : "Klicka för att visa historik",
+                hint: zoomed
+                  ? it.drill
+                    ? "Klicka igen för att utforska"
+                    : "Klicka igen för att visa historik"
+                  : it.drill
+                    ? "Klicka för att utforska"
+                    : "Klicka för att visa historik",
+              };
+              const act = it.onClick ?? (() => setHover(tileInfo));
+              const activate = () => {
+                if (!zoomed && !readable(w0, h0)) {
+                  // Too small to read: show it first, act on the next click.
+                  setZoomKey(it.key);
+                  setHover({ ...tileInfo, hint: it.drill ? "Klicka igen för att utforska" : "Klicka igen för att visa historik" });
+                  return;
+                }
+                setZoomKey(null);
+                act();
               };
               return (
                 <Tile
@@ -1118,8 +1157,9 @@ function App() {
                   info={tileInfo}
                   hovered={hover?.title === tileInfo.title}
                   focused={!!focusedRow && it.key === focusedRow.key}
+                  zoomed={zoomed}
                   onHover={setHover}
-                  onActivate={it.onClick ?? (() => setHover(tileInfo))}
+                  onActivate={activate}
                 />
               );
             })}
