@@ -3,8 +3,8 @@
  * click-to-drill treemap (/utgifter, /inkomster). Inside a group the page
  * shows the group's history graph with the treemap of its postings below;
  * clicking a posting focuses it, and the graph follows. The URL mirrors what
- * is on screen, see routes.ts. The treemap is a port of the design reference
- * in design/Statsbudgeten v2.dc.html.
+ * is on screen, see routes.ts. The treemap is a port of the design handoff
+ * (an HTML reference that is not part of the repo).
  */
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
@@ -76,7 +76,7 @@ type NormRow = { key: string; id: number; title: string; v: number };
 type NormGroup = { key: string; code: string; title: string; total: number; rows: NormRow[] };
 
 /**
- * Normalize expenses and revenues to one shape (see design/README.md › Data).
+ * Normalize expenses and revenues to one shape, as the design handoff specifies.
  * `f` is a price-level factor (1 = nominal) applied to every amount.
  */
 function normalize(b: BudgetJson, view: View, f = 1): NormGroup[] {
@@ -173,7 +173,7 @@ function squarify<T>(items: { it: T; a: number }[], W: number, H: number): Place
 
 // ---- Logo ---------------------------------------------------------------------
 
-/** The mark: a mini treemap (design/README.md › Logo + favicon). */
+/** The mark: a mini treemap, same geometry as assets/favicon.svg. */
 const Logo = ({ size = 20 }: { size?: number }) => (
   <svg width={size} height={size} viewBox="0 0 32 32" style={{ flex: "none" }} aria-hidden>
     <rect x="0" y="0" width="17" height="32" rx="3" fill="#3f86e0" />
