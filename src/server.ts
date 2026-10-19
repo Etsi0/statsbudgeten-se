@@ -82,13 +82,34 @@ async function socialImage(req: Request): Promise<Response> {
 }
 
 /**
+ * The bundled app page, fetched from this server over loopback.
+ *
+ * It must not go through the public URL: in production that request would
+ * travel through Fly's proxy, which compresses the body. fetch() then
+ * decompresses it but keeps the Content-Encoding header, and HTMLRewriter
+ * would copy that header onto the rewritten, uncompressed page, which browsers
+ * refuse with ERR_CONTENT_DECODING_FAILED. So the fetch stays local and only
+ * the headers that describe the body are kept.
+ */
+async function bundledPage(): Promise<Response> {
+  const res = await fetch(`http://127.0.0.1:${server.port}/__index`, { headers: { accept: "text/html" } });
+  return new Response(res.body, {
+    status: res.status,
+    headers: {
+      "content-type": res.headers.get("content-type") ?? "text/html;charset=utf-8",
+      "cache-control": res.headers.get("cache-control") ?? "no-cache",
+    },
+  });
+}
+
+/**
  * The app page, with the share tags set for the URL: the title, a description
  * and an og:image of the chart the page shows, so a link to a drilled-down
- * view previews that view. The bundled HTML is fetched from the server itself.
+ * view previews that view.
  */
 async function page(req: Request): Promise<Response> {
   const url = new URL(req.url);
-  const html = await fetch(new URL("/__index", url), { headers: { accept: "text/html" } });
+  const html = await bundledPage();
   const data = await loadData().catch(() => null);
   if (!data) return html;
   const route = parseRoute(url);
