@@ -5,6 +5,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { BudgetJsonSchema, type BudgetJson } from "../../types/BudgetJsonSchema";
+import { InflationSchema } from "../../types/InflationSchema";
+import { inflationFactors } from "../inflation";
 import "./styles.css";
 
 // ---- Design-only tweaks (constants in production) ----------------------------
@@ -38,22 +40,25 @@ type View = "exp" | "rev";
 type NormRow = { key: string; id: number; title: string; v: number };
 type NormGroup = { key: string; code: string; title: string; total: number; rows: NormRow[] };
 
-/** Normalize expenses and revenues to one shape (see design/README.md › Data). */
-function normalize(b: BudgetJson, view: View): NormGroup[] {
+/**
+ * Normalize expenses and revenues to one shape (see design/README.md › Data).
+ * `f` is a price-level factor (1 = nominal) applied to every amount.
+ */
+function normalize(b: BudgetJson, view: View, f = 1): NormGroup[] {
   return view === "rev"
     ? b.revenues.map((g) => ({
         key: `ink${g.id_start}`,
         code: String(g.id_start),
         title: g.title,
-        total: g.total,
-        rows: g.rows.map((r) => ({ key: String(r.id), id: r.id, title: r.title, v: r.revenue })),
+        total: g.total * f,
+        rows: g.rows.map((r) => ({ key: String(r.id), id: r.id, title: r.title, v: r.revenue * f })),
       }))
     : b.expenses.map((g) => ({
         key: `uo${g.uo}`,
         code: `UO ${g.uo}`,
         title: g.title,
-        total: g.total,
-        rows: g.rows.map((r) => ({ key: r.title, id: r.id, title: r.title, v: r.expense })),
+        total: g.total * f,
+        rows: g.rows.map((r) => ({ key: r.title, id: r.id, title: r.title, v: r.expense * f })),
       }));
 }
 
@@ -259,13 +264,19 @@ type HistoryProps = {
   years: number[];
   budgets: Record<number, BudgetJson>;
   year: number;
+  /** Price-level factor per year (1 when showing nominal amounts). */
+  factorOf: (y: number) => number;
+  /** True when a year is shown nominal because inflation data is missing. */
+  nominal: (y: number) => boolean;
+  priceNote: string;
+  nominalNote: string;
   onClose: () => void;
 };
 
-function History({ hist, open, years, budgets, year, onClose }: HistoryProps) {
+function History({ hist, open, years, budgets, year, factorOf, nominal, priceNote, nominalNote, onClose }: HistoryProps) {
   const series = years.map((y) => {
     const b = budgets[y];
-    const g = b ? normalize(b, hist.view).find((x) => x.key === hist.gkey) : undefined;
+    const g = b ? normalize(b, hist.view, factorOf(y)).find((x) => x.key === hist.gkey) : undefined;
     let v = 0;
     if (g) v = hist.row == null ? g.total : (g.rows.find((r) => r.key === hist.row)?.v ?? 0);
     return { y, v };
@@ -290,10 +301,15 @@ function History({ hist, open, years, budgets, year, onClose }: HistoryProps) {
   for (let v = lo; v <= hi + step / 2; v += step) {
     grid.push({ top: `${Y(v)}%`, label: (step >= 1e6 ? NF0 : NF1).format(v / 1e6) });
   }
-  const first = series[0]!;
-  const last = series[n - 1]!;
+  // The headline change compares only years that are in the same prices; a
+  // year shown nominal for lack of inflation data is left out of it.
+  const comparable = series.filter((s) => !nominal(s.y));
+  const span = comparable.length >= 2 ? comparable : series;
+  const first = span[0]!;
+  const last = span[span.length - 1]!;
   const ch = first.v ? ((last.v - first.v) / first.v) * 100 : 0;
   const dark = hist.fg !== INK;
+  const anyNominal = years.some(nominal);
 
   return (
     <div
@@ -323,7 +339,10 @@ function History({ hist, open, years, budgets, year, onClose }: HistoryProps) {
       >
         <div className="top">
           <div className="heading">
-            <span className="kicker">{hist.kicker}</span>
+            <span className="kicker">
+              {hist.kicker}
+              {priceNote}
+            </span>
             <span className="name" lang="sv">
               {hist.title}
             </span>
@@ -399,11 +418,12 @@ function History({ hist, open, years, budgets, year, onClose }: HistoryProps) {
                 style={{ left: `${X(i)}%`, fontWeight: selected ? 700 : 500, opacity: selected ? 1 : 0.7 }}
               >
                 {s.y}
+                {nominal(s.y) ? "*" : ""}
               </span>
             );
           })}
         </div>
-        <div className="note" />
+        <div className="note">{anyNominal ? nominalNote : ""}</div>
       </div>
     </div>
   );
@@ -421,6 +441,8 @@ function App() {
   const [hover, setHover] = useState<Info | null>(null);
   const [hist, setHist] = useState<Hist | null>(null);
   const [histOpen, setHistOpen] = useState(false);
+  const [rates, setRates] = useState<Record<string, number>>({});
+  const [real, setReal] = useState(false);
   const [size, setSize] = useState({ W: 1000, H: 600 });
   const [error, setError] = useState(false);
   const mapRef = useRef<HTMLDivElement>(null);
@@ -436,6 +458,11 @@ function App() {
         const years = (await res.json()) as unknown;
         if (!Array.isArray(years) || !years.every((y) => typeof y === "number")) throw new Error("Bad year list");
         const sorted = [...(years as number[])].sort((a, b) => a - b);
+        // Inflation data is optional: without it the toggle simply stays hidden.
+        const inflation = await fetch("/api/inflation")
+          .then((r) => (r.ok ? r.json() : null))
+          .catch(() => null);
+        const parsedInflation = InflationSchema.safeParse(inflation);
         const entries = await Promise.all(
           sorted.map(async (y) => {
             const r = await fetch(`/api/budget/${y}`);
@@ -446,6 +473,7 @@ function App() {
         if (cancelled) return;
         const latest = sorted[sorted.length - 1];
         setYrs(sorted);
+        setRates(parsedInflation.success ? parsedInflation.data.rates : {});
         setBudgets(Object.fromEntries(entries));
         setYear(latest ?? null);
         if (latest == null) setError(true);
@@ -521,8 +549,18 @@ function App() {
   const B = year != null ? budgets[year] : undefined;
   const multiYear = yrs.length > 1;
 
-  const all = useMemo(() => (B ? normalize(B, view) : []), [B, view]);
-  const total = B ? (rev ? B.revenuesTotal : B.expensesTotal) : 0;
+  // Inflation adjustment: everything is expressed in the latest year's prices.
+  const baseYear = yrs.length ? yrs[yrs.length - 1]! : null;
+  const { factors, convertible } = useMemo(() => inflationFactors(rates, yrs, baseYear ?? 0), [rates, yrs, baseYear]);
+  const hasInflation = baseYear != null && convertible.length > 1;
+  const factorOf = (y: number) => (real ? (factors.get(y) ?? 1) : 1);
+  const nominal = (y: number) => real && factors.get(y) == null;
+  const priceNote = real && baseYear != null ? ` · i ${baseYear} års priser` : "";
+  const nominalNote = "* nominellt, inflationsdata saknas";
+  const f = year != null ? factorOf(year) : 1;
+
+  const all = useMemo(() => (B ? normalize(B, view, f) : []), [B, view, f]);
+  const total = B ? (rev ? B.revenuesTotal : B.expensesTotal) * f : 0;
   const groups = all.filter((g) => g.total > 0).sort((a, b) => b.total - a.total);
   const hueOf = Object.fromEntries(all.map((g, i) => [g.key, ((i * 360) / all.length + (rev ? 30 : 250)) % 360])) as Record<string, number>;
   const group = uo != null ? all.find((g) => g.key === uo) ?? null : null;
@@ -604,14 +642,14 @@ function App() {
       ? {
           title: rest ? T.rest : group.title,
           value: fmd(rest ? sumItems : group.total),
-          share: `${fpct(((rest ? sumItems : group.total) / gross) * 100)} av ${T.all} ${year} · ${items.length} block`,
-          hint: "Esc för att gå tillbaka",
+          share: `${fpct(((rest ? sumItems : group.total) / gross) * 100)} av ${T.all} ${year} · ${items.length} block${priceNote}`,
+          hint: year != null && nominal(year) ? nominalNote : "Esc för att gå tillbaka",
         }
       : {
           title: `${T.heading} ${year}`,
           value: fmd(total),
-          share: `${groups.length} ${T.areas}${negNote}`,
-          hint: "Klicka på ett block",
+          share: `${groups.length} ${T.areas}${negNote}${priceNote}`,
+          hint: year != null && nominal(year) ? nominalNote : "Klicka på ett block",
         };
   const info = hover ?? base;
 
@@ -622,8 +660,8 @@ function App() {
         <div className="tabs" role="tablist">
           {(
             [
-              ["exp", "Utgifter", "var(--expense)", B?.expensesTotal],
-              ["rev", "Inkomster", "var(--revenue)", B?.revenuesTotal],
+              ["exp", "Utgifter", "var(--expense)", B ? B.expensesTotal * f : undefined],
+              ["rev", "Inkomster", "var(--revenue)", B ? B.revenuesTotal * f : undefined],
             ] as const
           ).map(([k, label, dot, tot]) => (
             <button
@@ -640,6 +678,22 @@ function App() {
             </button>
           ))}
         </div>
+        {hasInflation && (
+          <button
+            type="button"
+            role="switch"
+            aria-checked={real}
+            className={`switch${real ? " on" : ""}`}
+            title={`Räkna om alla belopp till ${baseYear} års prisnivå (KPI)`}
+            onClick={() => {
+              setReal((r) => !r);
+              setHover(null);
+            }}
+          >
+            <span className="knob" aria-hidden />
+            <span>Justera för inflation</span>
+          </button>
+        )}
         <div className="year-picker">
           <span className="label" id="year-label">
             Budgetår
@@ -652,12 +706,14 @@ function App() {
                 role="radio"
                 aria-checked={y === year}
                 className={y === year ? "active" : ""}
+                title={nominal(y) ? "Nominellt belopp, inflationsdata saknas" : undefined}
                 onClick={() => {
                   setYear(y);
                   setHover(null);
                 }}
               >
                 {y}
+                {nominal(y) ? "*" : ""}
               </button>
             ))}
           </div>
@@ -775,7 +831,18 @@ function App() {
         })}
 
         {hist && year != null && (
-          <History hist={hist} open={histOpen} years={yrs} budgets={budgets} year={year} onClose={closeHist} />
+          <History
+            hist={hist}
+            open={histOpen}
+            years={yrs}
+            budgets={budgets}
+            year={year}
+            factorOf={factorOf}
+            nominal={nominal}
+            priceNote={priceNote}
+            nominalNote={nominalNote}
+            onClose={closeHist}
+          />
         )}
       </div>
 

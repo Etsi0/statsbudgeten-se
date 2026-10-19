@@ -1,0 +1,5 @@
+{
+  "description": "Årlig inflation i procent (KPI, förändring i årsmedeltal mot föregående år). Nyckeln är året, värdet är inflationen det året. För att räkna om år A till år B:s prisnivå behövs värden för A+1 … B, så basåret självt behöver inget värde.",
+  "source": "",
+  "rates": {}
+}

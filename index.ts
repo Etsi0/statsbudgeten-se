@@ -15,3 +15,5 @@ export {
   type RevenueGroup,
   type RevenueRow,
 } from "./types/BudgetRowSchema";
+export { InflationSchema, type Inflation } from "./types/InflationSchema";
+export { inflationFactor, inflationFactors, type InflationRates } from "./src/inflation";

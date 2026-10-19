@@ -4,6 +4,7 @@
  * Usage: bun --hot src/server.ts  (or `bun run web`)
  */
 import index from "./web/index.html";
+import { InflationSchema } from "../types/InflationSchema";
 
 const root = new URL("..", import.meta.url).pathname;
 
@@ -20,6 +21,16 @@ const server = Bun.serve({
   routes: {
     "/": index,
     "/api/years": () => Response.json(listYears()),
+    "/api/inflation": async () => {
+      const file = Bun.file(`${root}data/inflation.json`);
+      if (!(await file.exists())) return Response.json({ rates: {} });
+      const parsed = InflationSchema.safeParse(await file.json());
+      if (!parsed.success) {
+        console.warn("data/inflation.json är ogiltig, ignoreras:", parsed.error.message);
+        return Response.json({ rates: {} });
+      }
+      return Response.json(parsed.data, { headers: { "cache-control": "public, max-age=3600" } });
+    },
     "/api/budget/:year": async (req) => {
       const { year } = req.params;
       if (!/^\d{4}$/.test(year)) return new Response("Bad year", { status: 400 });
