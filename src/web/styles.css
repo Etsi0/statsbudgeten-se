@@ -488,10 +488,10 @@ button {
   position: relative;
   flex: 1;
   min-height: 0;
-  margin: 24px 8px 30px 52px;
+  margin: 30px 8px 30px 52px;
 }
 .panel.focus .chart {
-  margin: 20px 8px 26px 52px;
+  margin: 28px 8px 26px 52px;
 }
 .panel .gridline {
   position: absolute;
@@ -1005,7 +1005,7 @@ button {
     font-size: 17px;
   }
   .panel .chart {
-    margin: 20px 28px 26px 40px;
+    margin: 28px 28px 26px 40px;
   }
   .panel.focus .name {
     white-space: normal;

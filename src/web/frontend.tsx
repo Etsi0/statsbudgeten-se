@@ -233,21 +233,24 @@ type Series = { key: string; points: Point[]; color?: string; label?: string };
 /** Chart x position in percent for point i of n, inset 5 %–95 %. */
 const X = (i: number, n: number) => (n === 1 ? 50 : 5 + (i / (n - 1)) * 90);
 
-/** Y axis from the data: padded, snapped to a nice step, with gridline labels in mdkr. */
+/**
+ * Y axis from the data, with gridline labels in mdkr. The bottom snaps down
+ * to a nice step so the lowest gridline is the floor; the top is the data
+ * plus a small headroom and is not snapped, so the plot fills the panel
+ * instead of leaving an empty band up to the next round number.
+ */
 function niceScale(values: number[]) {
   const mn = Math.min(...values);
   const mx = Math.max(...values);
-  const pad = Math.max((mx - mn) * 0.25, mx * 0.05, 1);
-  let lo = Math.max(0, mn - pad);
-  let hi = mx + pad;
-  const raw = (hi - lo) / 4;
+  const pad = Math.max((mx - mn) * 0.1, mx * 0.04, 1);
+  const hi = mx + pad;
+  const raw = (hi - Math.max(0, mn - pad)) / 5;
   const mag = Math.pow(10, Math.floor(Math.log10(raw)));
   const step = [1, 2, 2.5, 5, 10].map((m) => m * mag).find((s) => s >= raw) ?? mag * 10;
-  lo = Math.floor(lo / step) * step;
-  hi = Math.ceil(hi / step) * step;
+  const lo = Math.max(0, Math.floor((mn - pad) / step) * step);
   const Y = (v: number) => 100 - ((v - lo) / (hi - lo || 1)) * 100;
   const grid: { top: string; label: string }[] = [];
-  for (let v = lo; v <= hi + step / 2; v += step) {
+  for (let v = lo; v <= hi; v += step) {
     grid.push({ top: `${Y(v)}%`, label: (step >= 1e6 ? NF0 : NF1).format(v / 1e6) });
   }
   return { Y, grid };
