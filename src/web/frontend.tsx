@@ -908,6 +908,9 @@ function App() {
   const [q, setQ] = useState(initialRoute.q);
   const [hover, setHover] = useState<Info | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  /** The settings popover on desktop (inflation, year, unit). */
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const settingsRef = useRef<HTMLDivElement>(null);
   const sheetRef = useRef<HTMLDivElement>(null);
   const toggleRef = useRef<HTMLButtonElement>(null);
   /** Key of a too-small tile that has been expanded in place, see `readable`. */
@@ -995,6 +998,7 @@ function App() {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
       if (menuOpen) return setMenuOpen(false);
+      if (settingsOpen) return setSettingsOpen(false);
       if (zoomKey != null) return setZoomKey(null);
       if (mode === "about") return showOverview();
       if (mode === "search") return q ? setQ("") : showOverview();
@@ -1007,7 +1011,17 @@ function App() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [menuOpen, zoomKey, mode, q, itemKey, pendingItem, rest]);
+  }, [menuOpen, settingsOpen, zoomKey, mode, q, itemKey, pendingItem, rest]);
+
+  // The settings popover closes on a click anywhere outside it.
+  useEffect(() => {
+    if (!settingsOpen) return;
+    const onDown = (e: PointerEvent) => {
+      if (!settingsRef.current?.contains(e.target as Node)) setSettingsOpen(false);
+    };
+    document.addEventListener("pointerdown", onDown);
+    return () => document.removeEventListener("pointerdown", onDown);
+  }, [settingsOpen]);
   // A zoomed tile belongs to one level; leave it when the level changes.
   useEffect(() => setZoomKey(null), [mode, view, year, uo, rest]);
 
@@ -1415,68 +1429,93 @@ function App() {
             <span>Om</span>
           </button>
           </nav>
-          {hasInflation && (
+          <div className={`settings${settingsOpen ? " open" : ""}`} ref={settingsRef}>
             <button
               type="button"
-              role="switch"
-              aria-checked={real}
-              className={`switch${real ? " on" : ""}`}
-              title={`Räkna om alla belopp till ${baseYear} års prisnivå (KPI)`}
-              onClick={() => {
-                trackEvent("toggle_inflation", { enabled: !real, base_year: baseYear ?? "" });
-                setReal(!real);
-                setHover(null);
-              }}
+              className="settings-toggle"
+              aria-expanded={settingsOpen}
+              aria-controls="settings"
+              aria-label="Inställningar"
+              title="Inställningar"
+              onClick={() => setSettingsOpen((o) => !o)}
             >
-              <span className="knob" aria-hidden />
-              <span>Justera för inflation</span>
+              {year != null && (
+                <span className="now">
+                  {year}
+                  {nominal(year) ? "*" : ""}, i {UNITS.find((u) => u.k === unit)?.label}
+                  {real ? `, ${baseYear} års priser` : ""}
+                </span>
+              )}
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                <circle cx="12" cy="12" r="3" />
+                <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3h0a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8v0a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" />
+              </svg>
             </button>
-          )}
-          <div className="pickers">
-            <div className="year-picker">
-              <span className="label" id="year-label">
-                Budgetår
-              </span>
-              <div className="seg" role="radiogroup" aria-labelledby="year-label">
-                {yrs.map((y) => (
-                  <button
-                    key={y}
-                    type="button"
-                    role="radio"
-                    aria-checked={y === year}
-                    className={y === year ? "active" : ""}
-                    title={nominal(y) ? "Nominellt belopp, inflationsdata saknas" : undefined}
-                    onClick={() => selectYear(y)}
-                  >
-                    {y}
-                    {nominal(y) ? "*" : ""}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div className="year-picker unit-picker">
-              <span className="label" id="unit-label">
-                Visa
-              </span>
-              <div className="seg" role="radiogroup" aria-labelledby="unit-label">
-                {UNITS.map((u) => (
-                  <button
-                    key={u.k}
-                    type="button"
-                    role="radio"
-                    aria-checked={u.k === unit}
-                    className={u.k === unit ? "active" : ""}
-                    title={u.k === "kr" ? "Belopp i kronor" : `Grafer i procent av årets ${u.k === "rev" ? "inkomster" : "utgifter"}`}
-                    onClick={() => {
-                      if (u.k === unit) return;
-                      trackEvent("toggle_unit", { unit: u.k });
-                      setUnit(u.k);
-                      setHover(null);
-                    }}
-                  >
-                    {u.label}
-                  </button>
-                ))}
+            <div className="popover" id="settings" role="group" aria-label="Inställningar">
+              {hasInflation && (
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={real}
+                  className={`switch${real ? " on" : ""}`}
+                  title={`Räkna om alla belopp till ${baseYear} års prisnivå (KPI)`}
+                  onClick={() => {
+                    trackEvent("toggle_inflation", { enabled: !real, base_year: baseYear ?? "" });
+                    setReal(!real);
+                    setHover(null);
+                  }}
+                >
+                  <span className="knob" aria-hidden />
+                  <span>Justera för inflation</span>
+                </button>
+              )}
+              <div className="pickers">
+                <div className="year-picker">
+                  <span className="label" id="year-label">
+                    Budgetår
+                  </span>
+                  <div className="seg" role="radiogroup" aria-labelledby="year-label">
+                    {yrs.map((y) => (
+                      <button
+                        key={y}
+                        type="button"
+                        role="radio"
+                        aria-checked={y === year}
+                        className={y === year ? "active" : ""}
+                        title={nominal(y) ? "Nominellt belopp, inflationsdata saknas" : undefined}
+                        onClick={() => selectYear(y)}
+                      >
+                        {y}
+                        {nominal(y) ? "*" : ""}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="year-picker unit-picker">
+                  <span className="label" id="unit-label">
+                    Visa
+                  </span>
+                  <div className="seg" role="radiogroup" aria-labelledby="unit-label">
+                    {UNITS.map((u) => (
+                      <button
+                        key={u.k}
+                        type="button"
+                        role="radio"
+                        aria-checked={u.k === unit}
+                        className={u.k === unit ? "active" : ""}
+                        title={u.k === "kr" ? "Belopp i kronor" : `Grafer i procent av årets ${u.k === "rev" ? "inkomster" : "utgifter"}`}
+                        onClick={() => {
+                          if (u.k === unit) return;
+                          trackEvent("toggle_unit", { unit: u.k });
+                          setUnit(u.k);
+                          setHover(null);
+                        }}
+                      >
+                        {u.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </div>
             </div>
           </div>
