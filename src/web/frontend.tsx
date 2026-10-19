@@ -18,6 +18,26 @@ import { buildIndex, search as runSearch, type SearchHit } from "../search";
 import { buildUrl, groupKey, groupNumber, parseRoute, type Mode, type View } from "./routes";
 import "./styles.css";
 
+/**
+ * Favicon, home-screen icon and web manifest, served from assets/ by the
+ * server. Added here rather than in index.html because Bun's HTML bundler
+ * insists on bundling every <link href> itself and rewrites the paths.
+ */
+function installIcons() {
+  const links: [string, string, Record<string, string>?][] = [
+    ["icon", "/favicon.svg", { type: "image/svg+xml" }],
+    ["apple-touch-icon", "/apple-touch-icon.png", { sizes: "180x180" }],
+    ["manifest", "/site.webmanifest"],
+  ];
+  for (const [rel, href, attrs] of links) {
+    const link = document.createElement("link");
+    link.rel = rel;
+    link.href = href;
+    for (const [k, v] of Object.entries(attrs ?? {})) link.setAttribute(k, v);
+    document.head.appendChild(link);
+  }
+}
+
 /** content/om.md, converted to JSON when the bundle is built. */
 const ABOUT: Block[] = aboutContent();
 
@@ -150,6 +170,18 @@ function squarify<T>(items: { it: T; a: number }[], W: number, H: number): Place
   }
   return out;
 }
+
+// ---- Logo ---------------------------------------------------------------------
+
+/** The mark: a mini treemap (design/README.md › Logo + favicon). */
+const Logo = ({ size = 20 }: { size?: number }) => (
+  <svg width={size} height={size} viewBox="0 0 32 32" style={{ flex: "none" }} aria-hidden>
+    <rect x="0" y="0" width="17" height="32" rx="3" fill="#3f86e0" />
+    <rect x="19" y="0" width="13" height="18" rx="3" fill="#d9577f" />
+    <rect x="19" y="20" width="7" height="12" rx="2.5" fill="#e3a12f" />
+    <rect x="28" y="20" width="4" height="12" rx="1.5" fill="#33a573" />
+  </svg>
+);
 
 // ---- Shared types -------------------------------------------------------------
 
@@ -1167,7 +1199,10 @@ function App() {
   return (
     <div className="app" lang="sv">
       <div className={`menu${menuOpen ? " open" : ""}`}>
-        <span className="brand">Statsbudgeten</span>
+        <span className="brand">
+          <Logo size={20} />
+          <span>Statsbudgeten</span>
+        </span>
         <button
           type="button"
           className="menu-toggle"
@@ -1195,7 +1230,10 @@ function App() {
           }}
         >
         <div className="sheet-head">
-          <span className="brand">Statsbudgeten</span>
+          <span className="brand">
+          <Logo size={20} />
+          <span>Statsbudgeten</span>
+        </span>
           <button type="button" className="icon-btn" aria-label="Stäng menyn" onClick={() => setMenuOpen(false)}>
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden>
               <path d="M6 6l12 12M18 6L6 18" />
@@ -1448,5 +1486,6 @@ function App() {
   );
 }
 
+installIcons();
 initAnalytics();
 createRoot(document.getElementById("root")!).render(<App />);
