@@ -1693,6 +1693,9 @@ function App() {
         <span className="share">{info.share}</span>
         <span className="hint">{info.hint}</span>
       </footer>
+      <p className="credit" inert={menuOpen || undefined}>
+        © {new Date().getFullYear()} <a href="https://proddalbert.se" target="_blank" rel="noopener">Albert (@ProddAlbert)</a> · Data från Regeringskansliet och SCB · <a href="https://github.com/kodalbert/statsbudgeten-se" target="_blank" rel="noopener">Öppen källkod</a>
+      </p>
     </div>
   );
 }

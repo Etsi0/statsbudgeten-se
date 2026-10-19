@@ -769,6 +769,7 @@ button {
 }
 .prose {
   max-width: 680px;
+  margin: 0 auto;
   padding: 28px 32px 48px;
   font-size: 15px;
   line-height: 1.55;
@@ -964,6 +965,24 @@ button {
   color: var(--muted);
 }
 
+/* ---- Credit line ---- */
+
+.credit {
+  margin: -6px 0 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+.credit a {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--separator);
+  text-underline-offset: 2px;
+}
+.credit a:hover {
+  color: var(--ink);
+  text-decoration-color: var(--ink);
+}
+
 /* ---- Mobile ---- */
 
 @media (max-width: 720px) {
@@ -974,7 +993,8 @@ button {
   }
   .menu,
   .crumb-row,
-  .info {
+  .info,
+  .credit {
     padding-left: 16px;
     padding-right: 16px;
   }
