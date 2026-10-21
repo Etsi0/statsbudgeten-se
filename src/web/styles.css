@@ -1370,3 +1370,30 @@ dialog.share::backdrop {
     font-size: 13px;
   }
 }
+
+/* The static page crawlers get, shown until the app mounts and replaces it. */
+.prerender {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 24px 16px 48px;
+}
+.prerender nav {
+  color: var(--secondary);
+  margin-bottom: 16px;
+}
+.prerender table {
+  border-collapse: collapse;
+  margin: 12px 0;
+}
+.prerender th,
+.prerender td {
+  text-align: left;
+  padding: 4px 12px 4px 0;
+  border-bottom: 1px solid var(--line, #e3e1dc);
+}
+.prerender ol {
+  padding-left: 20px;
+}
+.prerender li {
+  margin: 4px 0;
+}

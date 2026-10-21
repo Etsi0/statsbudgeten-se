@@ -40,9 +40,24 @@ gets a history line chart. The URL mirrors what is on screen (`src/web/routes.ts
 | `/inkomster/1000/1111` | Inkomsttyp 1000 with inkomsttitel 1111 focused |
 | `/sok?q=försvar` | Search over areas and postings in the selected year |
 | `/om` | About page, written in `content/om.md` |
+| `/sitemap.xml`, `/robots.txt` | For search engines: every page of every year, generated from the data |
 | `…?year=2024` | Budget year (omitted for the latest year) |
 | `…?inflation=1` | Amounts adjusted for inflation |
 | `…?andel=inkomster` | Graphs in percent of the year's revenues (`andel=utgifter`: of expenses) |
+
+## Search engines
+
+The app renders in the browser, but every page is served with a head and body
+a crawler can use without JavaScript (`src/seo.ts`): the title, description and
+canonical URL for the view, Open Graph tags with a share image of the chart,
+JSON-LD (the site with its search box, breadcrumbs when drilled down), the icon
+links, and inside `#root` a static version of the page: its heading, its numbers
+as a table, and links to every page below it. The app replaces it on mount.
+The canonical URL drops the search query, the inflation toggle and the unit,
+and `/sitemap.xml` lists the canonical URL of every view, group and posting in
+every year. The icon links are added by the server rather than written in
+`index.html`, because Bun's HTML bundler tries to resolve every link href as a
+build asset.
 
 ## Data
 
