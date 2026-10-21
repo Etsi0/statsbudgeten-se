@@ -1,0 +1,68 @@
+import { describe, expect, test } from "bun:test";
+import { niceScale } from "./model";
+
+const values = (s: ReturnType<typeof niceScale>) => s.grid.map((g) => g.v);
+
+describe("niceScale", () => {
+  test("starts at zero by default, with headroom above the data", () => {
+    const s = niceScale([900, 950, 1000], 1);
+    expect(s.Y(0)).toBe(100);
+    expect(values(s)[0]).toBe(0);
+    // Zero is the axis edge here, not a line to emphasise.
+    expect(s.grid.some((g) => g.zero)).toBe(false);
+    expect(s.Y(1000)).toBeGreaterThan(0);
+    // The area fill ends at the bottom, which is the zero line.
+    expect(s.base).toBe(100);
+  });
+
+  test("the relative scale hugs the data but never crosses zero without it", () => {
+    const s = niceScale([900, 950, 1000], 1, "relative");
+    expect(values(s)[0]).toBeGreaterThan(0);
+    expect(s.Y(900)).toBeLessThan(100);
+    expect(s.base).toBe(100);
+    // The gridlines sit on multiples of the step, so the bottom one is one of them.
+    for (const v of values(s)) expect(Math.abs(v / s.step - Math.round(v / s.step))).toBeLessThan(1e-9);
+  });
+
+  test("negative data pulls the axis below zero and keeps zero as a gridline", () => {
+    for (const scale of ["zero", "relative"] as const) {
+      const s = niceScale([-300, 200, 400], 1, scale);
+      expect(s.Y(-300)).toBeLessThan(100);
+      expect(s.Y(400)).toBeGreaterThan(0);
+      expect(s.grid.some((g) => g.zero)).toBe(true);
+      expect(values(s).some((v) => v < 0)).toBe(true);
+      // The area fill ends at the zero line, not at the bottom of the chart.
+      expect(s.base).toBeCloseTo(s.Y(0));
+      expect(s.base).toBeLessThan(100);
+    }
+  });
+
+  test("all-negative data has zero at the top", () => {
+    const z = niceScale([-500, -400, -450], 1);
+    expect(z.Y(0)).toBe(0);
+    expect(z.base).toBe(0);
+    expect(values(z)[values(z).length - 1]).toBe(0);
+    expect(z.Y(-500)).toBeLessThan(100);
+
+    const r = niceScale([-500, -400, -450], 1, "relative");
+    expect(r.Y(0)).toBeLessThan(0);
+    expect(r.Y(-400)).toBeGreaterThan(0);
+    expect(r.base).toBe(0);
+    expect(values(r).every((v) => v <= 0)).toBe(true);
+  });
+
+  test("gridlines span the axis without running off it", () => {
+    for (const vs of [[1, 2, 3], [1234567, 1300000], [0.5, 0.52], [-2, -1], [-1, 1]]) {
+      for (const scale of ["zero", "relative"] as const) {
+        const s = niceScale(vs, 0.05, scale);
+        expect(s.grid.length).toBeGreaterThanOrEqual(2);
+        expect(s.grid.length).toBeLessThanOrEqual(8);
+        for (const g of s.grid) {
+          const top = parseFloat(g.top);
+          expect(top).toBeGreaterThanOrEqual(-1e-6);
+          expect(top).toBeLessThanOrEqual(100 + 1e-6);
+        }
+      }
+    }
+  });
+});

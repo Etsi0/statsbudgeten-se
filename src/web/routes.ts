@@ -13,12 +13,15 @@
  *   …?year=2024                  budget year (omitted for the latest year)
  *   …?inflation=1                amounts adjusted for inflation
  *   …?andel=inkomster            graphs in percent of the year's revenues (andel=utgifter: of expenses)
+ *   …?skala=relativ              the graphs' y-axis follows the data instead of starting at zero
  */
 
 export type View = "exp" | "rev";
 export type Mode = "overview" | "explore" | "about" | "search";
 /** What the graphs show: kronor, or percent of the year's revenues or expenses. */
 export type Unit = "kr" | "rev" | "exp";
+/** Where the graphs' y-axis starts: at zero, or just below the data. */
+export type Scale = "zero" | "relative";
 
 export type Route = {
   mode: Mode;
@@ -32,6 +35,7 @@ export type Route = {
   item: number | null;
   real: boolean;
   unit: Unit;
+  scale: Scale;
   /** Search query; only meaningful in search mode. */
   q: string;
 };
@@ -48,7 +52,8 @@ export function parseRoute(url: URL): Route {
   const real = url.searchParams.get("inflation") === "1";
   const year = parseYear(url.searchParams.get("year"));
   const unit: Unit = SLUG_VIEW[url.searchParams.get("andel") ?? ""] ?? "kr";
-  const none = { group: null, rest: false, item: null, real, unit, q: "" };
+  const scale: Scale = url.searchParams.get("skala") === "relativ" ? "relative" : "zero";
+  const none = { group: null, rest: false, item: null, real, unit, scale, q: "" };
   if (parts[0] === "om") return { mode: "about", view: "exp", year, ...none };
   if (parts[0] === "sok") return { mode: "search", view: "exp", year, ...none, q: url.searchParams.get("q")?.trim() ?? "" };
   const view = SLUG_VIEW[parts[0] ?? ""];
@@ -61,7 +66,7 @@ export function parseRoute(url: URL): Route {
     rest = true;
     i++;
   }
-  return { mode: "explore", view, year, group, rest, item: parseNat(parts[i]), real, unit, q: "" };
+  return { mode: "explore", view, year, group, rest, item: parseNat(parts[i]), real, unit, scale, q: "" };
 }
 
 /** Path + query for a route. `latest` lets the URL omit the default year. */
@@ -84,6 +89,7 @@ export function buildUrl(r: Route, latest: number | null): string {
   if (r.real) q.set("inflation", "1");
   const andel = UNIT_SLUG[r.unit];
   if (andel) q.set("andel", andel);
+  if (r.scale === "relative") q.set("skala", "relativ");
   const s = q.toString();
   return s ? `${path}?${s}` : path;
 }
