@@ -27,11 +27,11 @@ export const NF1 = new Intl.NumberFormat("sv-SE", { minimumFractionDigits: 1, ma
 export const NF0 = new Intl.NumberFormat("sv-SE", { maximumFractionDigits: 0 });
 export const NF2 = new Intl.NumberFormat("sv-SE", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-/** Amounts are in tkr; 1 mdkr = 1e6 tkr. */
+/** Amounts are in tkr; 1 mdkr = 1e6 tkr. The unit follows the magnitude, so negative amounts read the same as positive ones. */
 export const fmd = (tkr: number) => {
-  const m = tkr / 1e6;
-  if (m >= 10) return `${NF0.format(m)} mdkr`;
-  if (m >= 0.1) return `${NF1.format(m)} mdkr`;
+  const m = Math.abs(tkr) / 1e6;
+  if (m >= 10) return `${NF0.format(tkr / 1e6)} mdkr`;
+  if (m >= 0.1) return `${NF1.format(tkr / 1e6)} mdkr`;
   return `${NF0.format(tkr / 1e3)} mnkr`;
 };
 export const fpct = (p: number) => `${p >= 10 ? NF0.format(p) : p >= 0.1 ? NF1.format(p) : "<0,1"} %`;

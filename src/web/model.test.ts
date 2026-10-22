@@ -1,7 +1,20 @@
 import { describe, expect, test } from "bun:test";
-import { niceScale } from "./model";
+import { fmd, niceScale } from "./model";
 
 const values = (s: ReturnType<typeof niceScale>) => s.grid.map((g) => g.v);
+
+describe("fmd", () => {
+  test("picks the unit by magnitude, so negative amounts read like positive ones", () => {
+    expect(fmd(226_000_000)).toBe("226 mdkr");
+    expect(fmd(-226_000_000)).toBe("−226 mdkr");
+    expect(fmd(-126_613_000)).toBe("−127 mdkr");
+    expect(fmd(1_250_000)).toBe("1,3 mdkr");
+    expect(fmd(-1_250_000)).toBe("−1,3 mdkr");
+    expect(fmd(45_000)).toBe("45 mnkr");
+    expect(fmd(-45_000)).toBe("−45 mnkr");
+    expect(fmd(0)).toBe("0 mnkr");
+  });
+});
 
 describe("niceScale", () => {
   test("starts at zero by default, with headroom above the data", () => {
