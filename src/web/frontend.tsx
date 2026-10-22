@@ -540,6 +540,19 @@ function About() {
                 ))}
               </ul>
             );
+          if (b.t === "video")
+            return (
+              <div key={i} className="video">
+                <iframe
+                  src={`https://www.youtube.com/embed/${b.id}`}
+                  title={b.title}
+                  loading="lazy"
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                  referrerPolicy="strict-origin-when-cross-origin"
+                  allowFullScreen
+                />
+              </div>
+            );
           return (
             <ul key={i} className="downloads">
               {sources == null && <li className="muted">Hämtar filer …</li>}

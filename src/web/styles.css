@@ -948,6 +948,19 @@ dialog.share::backdrop {
   padding: 1px 5px;
   border-radius: 4px;
 }
+.prose .video {
+  aspect-ratio: 16 / 9;
+  margin: 4px 0 20px;
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--track);
+}
+.prose .video iframe {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
 .prose .downloads {
   list-style: none;
   padding: 0;

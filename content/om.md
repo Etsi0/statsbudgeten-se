@@ -1,5 +1,7 @@
 # Om Statsbudgeten
 
+![De kommer aldrig låta mig bli politiker efter det här...](https://www.youtube.com/watch?v=MbS-d4tSd14)
+
 ## Vad är det här?
 
 Statsbudgeten.se visar Sveriges statsbudget. Varje ruta är ett utgiftsområde eller en inkomsttyp och storleken motsvarar beloppet, ungefär (på grund av hur hemsidor fungerar så finns det en pytteliten fast "padding" för att göra det läsvänligt). Genom att klicka på ett utgiftsområde kan du se en graf över hur den utvecklats över tid (med justering för inflation tillgängligt i menyn) och individuella posterna
