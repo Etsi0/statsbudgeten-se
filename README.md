@@ -39,7 +39,7 @@ gets a history line chart. The URL mirrors what is on screen (`src/web/routes.ts
 | `/utgifter/6/ovriga`, `/utgifter/6/ovriga/23` | The "Övriga" bundle of small postings, optionally with one focused |
 | `/inkomster/1000/1111` | Inkomsttyp 1000 with inkomsttitel 1111 focused |
 | `/sok?q=försvar` | Search over areas and postings in the selected year |
-| `/om` | About page, written in `content/om.md` |
+| `/om` | About page, written in `content/om.md` (`![title](youtube url)` on its own line embeds a video) |
 | `/sitemap.xml`, `/robots.txt` | For search engines: every page of every year, generated from the data |
 | `…?year=2024` | Budget year (omitted for the latest year) |
 | `…?inflation=1` | Amounts adjusted for inflation |
