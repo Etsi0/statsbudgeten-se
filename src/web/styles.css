@@ -729,6 +729,10 @@ dialog.share::backdrop {
   right: 0;
   border-top: 1px solid var(--grid-color);
 }
+.panel .gridline.zero {
+  border-top-color: currentColor;
+  opacity: 0.35;
+}
 .panel .gridline span {
   position: absolute;
   right: 100%;

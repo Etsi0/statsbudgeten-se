@@ -15,7 +15,7 @@ import { initAnalytics, trackEvent, trackPageView } from "./analytics";
 import { aboutContent } from "./content.macro" with { type: "macro" };
 import type { Block, Inline } from "../markdown";
 import { buildIndex, search as runSearch, type SearchHit } from "../search";
-import { buildUrl, groupKey, groupNumber, parseRoute, type Mode, type Unit, type View } from "./routes";
+import { buildUrl, groupKey, groupNumber, parseRoute, type Mode, type Scale, type Unit, type View } from "./routes";
 import { FORMATS, FORMAT_KEYS, socialImagePath, type Format } from "./share";
 import {
   COPY,
@@ -23,6 +23,7 @@ import {
   PAPER,
   NF0,
   NF1,
+  SCALES,
   UNITS,
   changeOver,
   colorOf,
@@ -113,6 +114,8 @@ type LineChartProps = {
   /** The budget year picked in the menu: drawn bigger. */
   year: number;
   nominal: (y: number) => boolean;
+  /** Whether the y-axis starts at zero or hugs the data. */
+  scale: Scale;
   /** Fill for unselected dots, i.e. the panel background. */
   paper: string;
   /** Extra line at the bottom of the info box for year index i, e.g. the saldo. */
@@ -125,12 +128,12 @@ type LineChartProps = {
  * Line chart with an info box: hovering a year's dot or label shows the exact
  * figures and the change from the previous year; clicking pins the box.
  */
-function LineChart({ series, years, year, nominal, paper, extra, fmt }: LineChartProps) {
+function LineChart({ series, years, year, nominal, scale, paper, extra, fmt }: LineChartProps) {
   const open = useRevealed();
   const [hoverYear, setHoverYear] = useState<number | null>(null);
   const [pinnedYear, setPinnedYear] = useState<number | null>(null);
   const n = years.length;
-  const { Y, grid, step } = niceScale(series.flatMap((s) => s.points.map((p) => p.v)), fmt.minPad);
+  const { Y, grid, step, base } = niceScale(series.flatMap((s) => s.points.map((p) => p.v)), fmt.minPad, scale);
   const pts = (s: Series) => s.points.map((p, i) => `${X(i, n).toFixed(2)},${Y(p.v).toFixed(2)}`).join(" ");
   const selIndex = Math.max(0, years.indexOf(year));
   // With several series, each year's highest value is labelled above its dot
@@ -197,7 +200,7 @@ function LineChart({ series, years, year, nominal, paper, extra, fmt }: LineChar
   return (
     <div className="chart" onClick={() => setPinnedYear(null)}>
       {grid.map((g) => (
-        <div key={g.top} className="gridline" style={{ top: g.top }}>
+        <div key={g.top} className={`gridline${g.zero ? " zero" : ""}`} style={{ top: g.top }}>
           <span>{fmt.grid(g.v, step)}</span>
         </div>
       ))}
@@ -206,7 +209,7 @@ function LineChart({ series, years, year, nominal, paper, extra, fmt }: LineChar
         <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden>
           {series.map((s) => (
             <React.Fragment key={s.key}>
-              <polygon points={`${X(0, n)},100 ${pts(s)} ${X(n - 1, n)},100`} fill={s.color ?? "currentColor"} style={{ opacity: s.color ? 0.08 : 0.1 }} />
+              <polygon points={`${X(0, n)},${base.toFixed(2)} ${pts(s)} ${X(n - 1, n)},${base.toFixed(2)}`} fill={s.color ?? "currentColor"} style={{ opacity: s.color ? 0.08 : 0.1 }} />
               <polyline points={pts(s)} fill="none" stroke={s.color ?? "currentColor"} strokeWidth="3" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
             </React.Fragment>
           ))}
@@ -263,6 +266,7 @@ type OverviewProps = Prices & Display & {
   years: number[];
   budgets: Record<number, BudgetJson>;
   year: number;
+  scale: Scale;
 };
 
 const SIDES = [
@@ -270,7 +274,7 @@ const SIDES = [
   { k: "rev", label: "Inkomster", color: "var(--revenue)" },
 ] as const;
 
-function Overview({ years, budgets, year, factorOf, nominal: nominalKr, priceNote: priceNoteKr, nominalNote, unit, toUnit, fmt, unitNote }: OverviewProps) {
+function Overview({ years, budgets, year, scale, factorOf, nominal: nominalKr, priceNote: priceNoteKr, nominalNote, unit, toUnit, fmt, unitNote }: OverviewProps) {
   // A share is the same at any price level, so the price notes only apply in kronor.
   const nominal = unit === "kr" ? nominalKr : () => false;
   const priceNote = unit === "kr" ? priceNoteKr : "";
@@ -318,6 +322,7 @@ function Overview({ years, budgets, year, factorOf, nominal: nominalKr, priceNot
           years={years}
           year={year}
           nominal={nominal}
+          scale={scale}
           paper={PAPER}
           fmt={fmt}
           extra={(i) => {
@@ -338,6 +343,7 @@ type FocusProps = Prices & Display & {
   years: number[];
   budgets: Record<number, BudgetJson>;
   year: number;
+  scale: Scale;
   view: View;
   gkey: string;
   /** Row key of the focused posting, or null for the whole group. */
@@ -348,7 +354,7 @@ type FocusProps = Prices & Display & {
   fg: string;
 };
 
-function FocusPanel({ years, budgets, year, view, gkey, row, kicker, title, bg, fg, factorOf, nominal: nominalKr, priceNote: priceNoteKr, nominalNote, unit, toUnit, fmt, unitNote }: FocusProps) {
+function FocusPanel({ years, budgets, year, scale, view, gkey, row, kicker, title, bg, fg, factorOf, nominal: nominalKr, priceNote: priceNoteKr, nominalNote, unit, toUnit, fmt, unitNote }: FocusProps) {
   // A share is the same at any price level, so the price notes only apply in kronor.
   const nominal = unit === "kr" ? nominalKr : () => false;
   const priceNote = unit === "kr" ? priceNoteKr : "";
@@ -392,6 +398,7 @@ function FocusPanel({ years, budgets, year, view, gkey, row, kicker, title, bg, 
           years={years}
           year={year}
           nominal={nominal}
+          scale={scale}
           paper={bg}
           fmt={fmt}
         />
@@ -804,11 +811,12 @@ function App() {
   const [pendingItem, setPendingItem] = useState<number | null>(initialRoute.item);
   const [realWanted, setReal] = useState(initialRoute.real);
   const [unit, setUnit] = useState<Unit>(initialRoute.unit);
+  const [scale, setScale] = useState<Scale>(initialRoute.scale);
   const [q, setQ] = useState(initialRoute.q);
   const [hover, setHover] = useState<Info | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
-  /** The settings popover on desktop (inflation, year, unit). */
+  /** The settings popover on desktop (inflation, year, unit, y-axis). */
   const [settingsOpen, setSettingsOpen] = useState(false);
   const settingsRef = useRef<HTMLDivElement>(null);
   const sheetRef = useRef<HTMLDivElement>(null);
@@ -882,6 +890,7 @@ function App() {
     setPendingItem(r.item);
     setReal(r.real);
     setUnit(r.unit);
+    setScale(r.scale);
     setQ(r.q);
     setHover(null);
   };
@@ -1110,7 +1119,7 @@ function App() {
   const tracked = useRef<string | null>(null);
   useEffect(() => {
     if (year == null) return;
-    const url = buildUrl({ mode, view, year, group: group ? groupNumber(group.key) : null, rest, item: group ? itemId : null, real, unit, q }, latest);
+    const url = buildUrl({ mode, view, year, group: group ? groupNumber(group.key) : null, rest, item: group ? itemId : null, real, unit, scale, q }, latest);
     const current = window.location.pathname + window.location.search;
     if (url !== current) {
       // The first sync only normalises the URL we were opened with, and typing
@@ -1125,7 +1134,7 @@ function App() {
     if (tracked.current !== page) trackPageView(page, mode === "search" ? "Sök" : pageTitle);
     tracked.current = page;
     synced.current = url;
-  }, [mode, view, year, group, rest, itemId, real, unit, q, latest, pageTitle]);
+  }, [mode, view, year, group, rest, itemId, real, unit, scale, q, latest, pageTitle]);
 
   // Items at the current drill level, with what a click on each does.
   const level = B ? levelItems(all, view, group, rest) : { items: [], parentTotal: total };
@@ -1356,6 +1365,30 @@ function App() {
                     ))}
                   </div>
                 </div>
+                <div className="year-picker scale-picker">
+                  <span className="label" id="scale-label">
+                    Y-axel
+                  </span>
+                  <div className="seg" role="radiogroup" aria-labelledby="scale-label">
+                    {SCALES.map((sc) => (
+                      <button
+                        key={sc.k}
+                        type="button"
+                        role="radio"
+                        aria-checked={sc.k === scale}
+                        className={sc.k === scale ? "active" : ""}
+                        title={sc.title}
+                        onClick={() => {
+                          if (sc.k === scale) return;
+                          trackEvent("toggle_scale", { scale: sc.k });
+                          setScale(sc.k);
+                        }}
+                      >
+                        {sc.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -1449,7 +1482,7 @@ function App() {
         {searching && <Search budget={B} year={year} q={q} onChange={setQ} onPick={pickHit} />}
 
         {overview && B && year != null && (
-          <Overview years={yrs} budgets={budgets} year={year} {...prices} {...display} />
+          <Overview years={yrs} budgets={budgets} year={year} scale={scale} {...prices} {...display} />
         )}
 
         {!overview && !about && !searching && group && year != null && multiYear && (
@@ -1457,6 +1490,7 @@ function App() {
             years={yrs}
             budgets={budgets}
             year={year}
+            scale={scale}
             view={view}
             gkey={group.key}
             row={focusedRow?.key ?? null}

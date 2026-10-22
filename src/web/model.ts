@@ -5,7 +5,7 @@
  * functions only, no React and no DOM.
  */
 import type { BudgetJson } from "../../types/BudgetJsonSchema";
-import type { Unit, View } from "./routes";
+import type { Scale, Unit, View } from "./routes";
 
 // ---- Design-only tweaks (constants in production) ----------------------------
 
@@ -27,11 +27,11 @@ export const NF1 = new Intl.NumberFormat("sv-SE", { minimumFractionDigits: 1, ma
 export const NF0 = new Intl.NumberFormat("sv-SE", { maximumFractionDigits: 0 });
 export const NF2 = new Intl.NumberFormat("sv-SE", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-/** Amounts are in tkr; 1 mdkr = 1e6 tkr. */
+/** Amounts are in tkr; 1 mdkr = 1e6 tkr. The unit follows the magnitude, so negative amounts read the same as positive ones. */
 export const fmd = (tkr: number) => {
-  const m = tkr / 1e6;
-  if (m >= 10) return `${NF0.format(m)} mdkr`;
-  if (m >= 0.1) return `${NF1.format(m)} mdkr`;
+  const m = Math.abs(tkr) / 1e6;
+  if (m >= 10) return `${NF0.format(tkr / 1e6)} mdkr`;
+  if (m >= 0.1) return `${NF1.format(tkr / 1e6)} mdkr`;
   return `${NF0.format(tkr / 1e3)} mnkr`;
 };
 export const fpct = (p: number) => `${p >= 10 ? NF0.format(p) : p >= 0.1 ? NF1.format(p) : "<0,1"} %`;
@@ -74,6 +74,12 @@ export const UNITS: { k: Unit; label: string; note: string }[] = [
   { k: "kr", label: "kr", note: "" },
   { k: "rev", label: "% av inkomster", note: " · % av inkomsterna" },
   { k: "exp", label: "% av utgifter", note: " · % av utgifterna" },
+];
+
+/** The y-axis options in the settings, see the `skala` query parameter. */
+export const SCALES: { k: Scale; label: string; title: string }[] = [
+  { k: "zero", label: "Börja på 0", title: "Y-axeln börjar på noll, så linjens höjd visar beloppets storlek" },
+  { k: "relative", label: "Relativ", title: "Y-axeln följer värdena, så små förändringar syns tydligare" },
 ];
 
 // ---- Data model ---------------------------------------------------------------
@@ -292,19 +298,39 @@ export const X = (i: number, n: number) => (n === 1 ? 50 : 5 + (i / (n - 1)) * 9
  * plus a small headroom and is not snapped, so the plot fills the panel
  * instead of leaving an empty band up to the next round number.
  */
-export function niceScale(values: number[], minPad: number) {
+/**
+ * The y-axis of a line chart: `Y` maps a value to a percentage from the top,
+ * `grid` lists the gridlines (the one marked `zero` is a zero line inside the
+ * axis, worth drawing stronger) and `base` is where an area fill ends: the
+ * zero line when the axis crosses it, else the axis end nearest zero.
+ *
+ * With `scale` "zero" the axis always reaches zero, so a line's height can be
+ * read as its size; with "relative" it hugs the data, which makes small
+ * changes visible. Negative data pulls the axis below zero in both modes.
+ */
+export function niceScale(values: number[], minPad: number, scale: Scale = "zero") {
   const mn = Math.min(...values);
   const mx = Math.max(...values);
-  const pad = Math.max((mx - mn) * 0.1, mx * 0.04, minPad);
-  const hi = mx + pad;
-  const raw = (hi - Math.max(0, mn - pad)) / 5;
+  const pad = Math.max((mx - mn) * 0.1, Math.max(Math.abs(mx), Math.abs(mn)) * 0.04, minPad);
+  // Headroom on the sides where the data is; the axis never crosses zero
+  // unless the data does, and in "zero" mode it always reaches it.
+  const hi = mx > 0 ? mx + pad : scale === "zero" ? 0 : Math.min(0, mx + pad);
+  const loRaw = mn < 0 ? mn - pad : scale === "zero" ? 0 : Math.max(0, mn - pad);
+  const raw = (hi - loRaw) / 5;
   const mag = Math.pow(10, Math.floor(Math.log10(raw)));
   const step = [1, 2, 2.5, 5, 10].map((m) => m * mag).find((s) => s >= raw) ?? mag * 10;
-  const lo = Math.max(0, Math.floor((mn - pad) / step) * step);
-  const Y = (v: number) => 100 - ((v - lo) / (hi - lo || 1)) * 100;
-  const grid: { top: string; v: number }[] = [];
-  for (let v = lo; v <= hi + step * 1e-9; v += step) grid.push({ top: `${Y(v)}%`, v });
-  return { Y, grid, step };
+  // The end away from the data snaps to a gridline, so the zero line is always a gridline too.
+  const lo = mx <= 0 ? loRaw : Math.max(mn >= 0 ? 0 : -Infinity, Math.floor(loRaw / step) * step);
+  const top = mx <= 0 ? Math.min(0, Math.ceil(hi / step) * step) : hi;
+  const Y = (v: number) => 100 - ((v - lo) / (top - lo || 1)) * 100;
+  const grid: { top: string; v: number; zero: boolean }[] = [];
+  const first = Math.ceil(lo / step - 1e-9) * step;
+  for (let k = 0; first + k * step <= top + step * 1e-9; k++) {
+    const v = first + k * step;
+    grid.push({ top: `${Y(v)}%`, v, zero: mn < 0 && mx > 0 && Math.abs(v) < step * 1e-9 });
+  }
+  const base = Y(Math.min(Math.max(0, lo), top));
+  return { Y, grid, step, base };
 }
 
 /** Headline change between the first and last year that are in the same prices. */
