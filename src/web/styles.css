@@ -521,12 +521,14 @@ dialog.share::backdrop {
   display: flex;
   flex-direction: column;
   gap: 14px;
+  /* The list of small items can run past the bottom: the stage scrolls for it. */
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .map {
   position: relative;
-  flex: 1;
-  min-height: 140px;
+  flex: none;
   border-radius: 14px;
   overflow: hidden;
   background: var(--track);
@@ -535,11 +537,7 @@ dialog.share::backdrop {
 /* ---- Items too small for a tile, listed under the map ---- */
 
 .small {
-  flex: 0 1 auto;
-  min-height: 0;
-  max-height: 40%;
-  overflow-y: auto;
-  overscroll-behavior: contain;
+  flex: none;
   margin: 0;
   padding: 4px 0;
   list-style: none;

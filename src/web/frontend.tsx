@@ -89,6 +89,10 @@ const Logo = ({ size = 20 }: { size?: number }) => (
 
 type Info = { title: string; value?: string; share?: string; hint?: string };
 
+/** The map never gets shorter than this, and leaves this much room under itself for the list of small items. */
+const MAP_MIN = 140;
+const LIST_PEEK = 120;
+
 // ---- Line chart (overview and group/item history) ------------------------------
 
 /** True one frame after mount, to drive the enter transitions. */
@@ -818,9 +822,10 @@ function App() {
   const sheetRef = useRef<HTMLDivElement>(null);
   const toggleRef = useRef<HTMLButtonElement>(null);
   const [rates, setRates] = useState<Record<string, number>>({});
+  /** The stage's width and the height left for the map under the history panel. */
   const [size, setSize] = useState({ W: 1000, H: 600 });
   const [error, setError] = useState(false);
-  const mapRef = useRef<HTMLDivElement>(null);
+  const stageRef = useRef<HTMLDivElement>(null);
 
   // Load the list of years and every budget file (the charts need all years).
   useEffect(() => {
@@ -860,17 +865,6 @@ function App() {
       cancelled = true;
     };
   }, []);
-
-  // Treemap is laid out in real pixels.
-  useEffect(() => {
-    const el = mapRef.current;
-    if (!el) return;
-    const measure = () => setSize({ W: el.clientWidth || 1000, H: el.clientHeight || 600 });
-    measure();
-    const ro = new ResizeObserver(measure);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [mode]);
 
   const latest = yrs.length ? yrs[yrs.length - 1]! : null;
 
@@ -1149,8 +1143,13 @@ function App() {
 
   const { W, H } = size;
   const sumItems = items.reduce((s, it) => s + it.v, 0) || 1;
-  // Tiles too small for their label are listed under the map instead.
-  const { placed, listed } = placeItems(items, W, H);
+  // Tiles too small for their label are listed under the map instead. The
+  // layout always leaves room for the first rows of that list, so whether
+  // the list shows up cannot change the layout; when nothing is listed the
+  // map simply takes the room back. The stage scrolls for the rest of it.
+  const mapRoom = Math.max(MAP_MIN, H - LIST_PEEK);
+  const { placed, listed } = placeItems(items, W, mapRoom);
+  const mapH = listed.length ? mapRoom : Math.max(MAP_MIN, H);
   const infoOf = (it: Item): { info: Info; share: string } => {
     const shareOfParent = (it.v / parentTotal) * 100;
     const shareOfAll = (it.v / gross) * 100;
@@ -1167,6 +1166,28 @@ function App() {
     };
   };
   const multiYear = yrs.length > 1;
+  const hasPanel = !!group && year != null && multiYear;
+
+  // The treemap is laid out in real pixels. Its room is measured from the
+  // stage and the history panel, never from the map itself: the list under
+  // the map takes space from it, so measuring the map would feed back into
+  // which items are listed and the two would keep resizing each other.
+  useEffect(() => {
+    const el = stageRef.current;
+    if (!el || mode !== "explore") return;
+    const measure = () => {
+      const panel = el.querySelector<HTMLElement>(".panel.focus");
+      const gap = parseFloat(getComputedStyle(el).gap) || 0;
+      const used = panel ? panel.getBoundingClientRect().bottom - el.getBoundingClientRect().top + el.scrollTop + gap : 0;
+      setSize({ W: el.clientWidth || 1000, H: Math.max(0, el.clientHeight - used) || 600 });
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    const panel = el.querySelector(".panel.focus");
+    if (panel) ro.observe(panel);
+    return () => ro.disconnect();
+  }, [mode, hasPanel]);
 
   // The focus panel takes the group colour, or the focused posting's tile colour.
   const focusItem = focusedRow ? items.find((it) => it.key === focusedRow.key) : undefined;
@@ -1484,7 +1505,7 @@ function App() {
       </header>
       <Share open={shareOpen} onClose={() => setShareOpen(false)} title={pageTitle} />
 
-      <div className="stage" inert={menuOpen || undefined}>
+      <div className="stage" ref={stageRef} inert={menuOpen || undefined}>
         {about && <About />}
         {searching && <Search budget={B} year={year} q={q} onChange={setQ} onPick={pickHit} />}
 
@@ -1512,7 +1533,7 @@ function App() {
 
         {!overview && !about && !searching && (
           <>
-            <div className="map" ref={mapRef}>
+            <div className="map" style={{ height: mapH }}>
               {placed.map(({ it, x, y, w, h }) => {
                 const { bg, fg } = colorOf(it, !!group);
                 const { info: tileInfo, share } = infoOf(it);
@@ -1522,12 +1543,12 @@ function App() {
                     it={it}
                     rect={{
                       left: `${(x / W) * 100}%`,
-                      top: `${(y / H) * 100}%`,
+                      top: `${(y / mapRoom) * 100}%`,
                       width: `${(w / W) * 100}%`,
-                      height: `${(h / H) * 100}%`,
+                      height: `${(h / mapRoom) * 100}%`,
                     }}
                     w={w}
-                    h={h}
+                    h={(h * mapH) / mapRoom}
                     bg={bg}
                     fg={fg}
                     share={share}
