@@ -33,12 +33,11 @@ import {
   groupPanelColor,
   historyPoints,
   hueOf,
-  layout,
   levelItems,
   niceScale,
   normalize,
+  placeItems,
   pricesFor,
-  readable,
   sign,
   signed,
   X,
@@ -420,20 +419,17 @@ type TileProps = {
   info: Info;
   hovered: boolean;
   focused: boolean;
-  /** Expanded in place so a tile that was too small to read shows its text. */
-  zoomed: boolean;
   onHover: (info: Info | null) => void;
   onActivate: () => void;
 };
 
-function Tile({ it, rect, w, h, bg, fg, share, info, hovered, focused, zoomed, onHover, onActivate }: TileProps) {
+function Tile({ it, rect, w, h, bg, fg, share, info, hovered, focused, onHover, onActivate }: TileProps) {
   const minD = Math.min(w, h);
   const area = w * h;
-  const showLabel = zoomed || readable(w, h);
-  const showValue = zoomed || (w > 70 && h > 130);
-  const shareSize = zoomed ? 28 : Math.round(Math.max(18, Math.min(64, Math.sqrt(area) / 5.2)));
-  const titleSize = zoomed ? 15 : minD > 220 ? 18 : minD > 130 ? 15 : w < 130 ? 12 : 13;
-  const clamp = zoomed ? 3 : h > 170 ? 3 : h > 80 ? 2 : 1;
+  const showValue = w > 70 && h > 130;
+  const shareSize = Math.round(Math.max(18, Math.min(64, Math.sqrt(area) / 5.2)));
+  const titleSize = minD > 220 ? 18 : minD > 130 ? 15 : w < 130 ? 12 : 13;
+  const clamp = h > 170 ? 3 : h > 80 ? 2 : 1;
 
   return (
     <div
@@ -441,12 +437,12 @@ function Tile({ it, rect, w, h, bg, fg, share, info, hovered, focused, zoomed, o
       tabIndex={0}
       aria-label={`${info.title}, ${info.value}`}
       aria-pressed={focused || undefined}
-      className={`tile${hovered ? " hovered" : ""}${focused ? " focused" : ""}${zoomed ? " zoomed" : ""}`}
+      className={`tile${hovered ? " hovered" : ""}${focused ? " focused" : ""}`}
       style={{
         ...rect,
         background: bg,
         color: fg,
-        padding: zoomed || minD > 160 ? "14px 16px" : "8px 10px",
+        padding: minD > 160 ? "14px 16px" : "8px 10px",
         cursor: it.drill ? "zoom-in" : "pointer",
       }}
       onClick={(e) => {
@@ -464,7 +460,7 @@ function Tile({ it, rect, w, h, bg, fg, share, info, hovered, focused, zoomed, o
       onFocus={() => onHover(info)}
       onBlur={() => onHover(null)}
     >
-      <span className="head" style={{ opacity: showLabel ? 1 : 0 }}>
+      <span className="head">
         <span className="code">{it.code}</span>
         <span className="title" lang="sv" style={{ fontSize: titleSize, WebkitLineClamp: clamp }}>
           {it.label}
@@ -821,8 +817,6 @@ function App() {
   const settingsRef = useRef<HTMLDivElement>(null);
   const sheetRef = useRef<HTMLDivElement>(null);
   const toggleRef = useRef<HTMLButtonElement>(null);
-  /** Key of a too-small tile that has been expanded in place, see `readable`. */
-  const [zoomKey, setZoomKey] = useState<string | null>(null);
   const [rates, setRates] = useState<Record<string, number>>({});
   const [size, setSize] = useState({ W: 1000, H: 600 });
   const [error, setError] = useState(false);
@@ -909,7 +903,6 @@ function App() {
       if (menuOpen) return setMenuOpen(false);
       if (shareOpen) return; // the dialog closes itself
       if (settingsOpen) return setSettingsOpen(false);
-      if (zoomKey != null) return setZoomKey(null);
       if (mode === "about") return showOverview();
       if (mode === "search") return q ? setQ("") : showOverview();
       if (itemKey != null || pendingItem != null) {
@@ -921,7 +914,7 @@ function App() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [menuOpen, shareOpen, settingsOpen, zoomKey, mode, q, itemKey, pendingItem, rest]);
+  }, [menuOpen, shareOpen, settingsOpen, mode, q, itemKey, pendingItem, rest]);
 
   // The settings popover closes on a click anywhere outside it.
   useEffect(() => {
@@ -932,8 +925,6 @@ function App() {
     document.addEventListener("pointerdown", onDown);
     return () => document.removeEventListener("pointerdown", onDown);
   }, [settingsOpen]);
-  // A zoomed tile belongs to one level; leave it when the level changes.
-  useEffect(() => setZoomKey(null), [mode, view, year, uo, rest]);
 
   // The open menu is a modal sheet: the page behind it neither scrolls nor
   // takes focus, focus starts at the close button and returns to the toggle,
@@ -1158,7 +1149,23 @@ function App() {
 
   const { W, H } = size;
   const sumItems = items.reduce((s, it) => s + it.v, 0) || 1;
-  const rects = layout(items, W, H);
+  // Tiles too small for their label are listed under the map instead.
+  const { placed, listed } = placeItems(items, W, H);
+  const infoOf = (it: Item): { info: Info; share: string } => {
+    const shareOfParent = (it.v / parentTotal) * 100;
+    const shareOfAll = (it.v / gross) * 100;
+    return {
+      share: fpct(group ? shareOfParent : shareOfAll),
+      info: {
+        title: `${it.code ? `${it.code} · ` : ""}${it.label}`,
+        value: fmd(it.v),
+        share: group
+          ? `${fpct(shareOfParent)} av ${group.title.toLowerCase()} · ${fpct(shareOfAll)} av ${T.all}`
+          : `${fpct(shareOfAll)} av ${T.all}`,
+        hint: it.drill ? "Klicka för att utforska" : "Klicka för att visa historik",
+      },
+    };
+  };
   const multiYear = yrs.length > 1;
 
   // The focus panel takes the group colour, or the focused posting's tile colour.
@@ -1185,7 +1192,7 @@ function App() {
         ? {
             title: rest ? T.rest : group.title,
             value: fmd(rest ? sumItems : group.total),
-            share: `${fpct(((rest ? sumItems : group.total) / gross) * 100)} av ${T.all} ${year} · ${items.length} block${priceNote}`,
+            share: `${fpct(((rest ? sumItems : group.total) / gross) * 100)} av ${T.all} ${year} · ${placed.length} block${listed.length ? ` och ${listed.length} rader` : ""}${priceNote}`,
             hint: year != null && nominal(year) ? nominalNote : focusedRow ? "Esc för att avmarkera" : "Klicka på ett block för att se dess historik",
           }
         : {
@@ -1504,70 +1511,68 @@ function App() {
         )}
 
         {!overview && !about && !searching && (
-          <div className="map" ref={mapRef} onClick={() => setZoomKey(null)}>
-            {rects.map(({ it, x: x0, y: y0, w: w0, h: h0 }) => {
-              const { bg, fg } = colorOf(it, !!group);
-              const zoomed = zoomKey === it.key;
-              // Expand a zoomed tile to a readable size, kept inside the map.
-              let [x, y, w, h] = [x0, y0, w0, h0];
-              if (zoomed) {
-                w = Math.min(W, Math.max(w0, 230));
-                h = Math.min(H, Math.max(h0, 150));
-                x = Math.max(0, Math.min(W - w, x0 - (w - w0) / 2));
-                y = Math.max(0, Math.min(H - h, y0 - (h - h0) / 2));
-              }
-              const shareOfParent = (it.v / parentTotal) * 100;
-              const shareOfAll = (it.v / gross) * 100;
-              const tileInfo: Info = {
-                title: `${it.code ? `${it.code} · ` : ""}${it.label}`,
-                value: fmd(it.v),
-                share: group
-                  ? `${fpct(shareOfParent)} av ${group.title.toLowerCase()} · ${fpct(shareOfAll)} av ${T.all}`
-                  : `${fpct(shareOfAll)} av ${T.all}`,
-                hint: zoomed
-                  ? it.drill
-                    ? "Klicka igen för att utforska"
-                    : "Klicka igen för att visa historik"
-                  : it.drill
-                    ? "Klicka för att utforska"
-                    : "Klicka för att visa historik",
-              };
-              const act = clickOn(it);
-              const activate = () => {
-                if (!zoomed && !readable(w0, h0)) {
-                  // Too small to read: show it first, act on the next click.
-                  setZoomKey(it.key);
-                  setHover({ ...tileInfo, hint: it.drill ? "Klicka igen för att utforska" : "Klicka igen för att visa historik" });
-                  return;
-                }
-                setZoomKey(null);
-                act();
-              };
-              return (
-                <Tile
-                  key={it.key}
-                  it={it}
-                  rect={{
-                    left: `${(x / W) * 100}%`,
-                    top: `${(y / H) * 100}%`,
-                    width: `${(w / W) * 100}%`,
-                    height: `${(h / H) * 100}%`,
-                  }}
-                  w={w}
-                  h={h}
-                  bg={bg}
-                  fg={fg}
-                  share={fpct(group ? shareOfParent : shareOfAll)}
-                  info={tileInfo}
-                  hovered={hover?.title === tileInfo.title}
-                  focused={!!focusedRow && it.key === focusedRow.key}
-                  zoomed={zoomed}
-                  onHover={setHover}
-                  onActivate={activate}
-                />
-              );
-            })}
-          </div>
+          <>
+            <div className="map" ref={mapRef}>
+              {placed.map(({ it, x, y, w, h }) => {
+                const { bg, fg } = colorOf(it, !!group);
+                const { info: tileInfo, share } = infoOf(it);
+                return (
+                  <Tile
+                    key={it.key}
+                    it={it}
+                    rect={{
+                      left: `${(x / W) * 100}%`,
+                      top: `${(y / H) * 100}%`,
+                      width: `${(w / W) * 100}%`,
+                      height: `${(h / H) * 100}%`,
+                    }}
+                    w={w}
+                    h={h}
+                    bg={bg}
+                    fg={fg}
+                    share={share}
+                    info={tileInfo}
+                    hovered={hover?.title === tileInfo.title}
+                    focused={!!focusedRow && it.key === focusedRow.key}
+                    onHover={setHover}
+                    onActivate={clickOn(it)}
+                  />
+                );
+              })}
+            </div>
+            {listed.length > 0 && (
+              <ul className="small" aria-label="Poster som är för små att visa som block">
+                {listed.map((it) => {
+                  const { bg } = colorOf(it, !!group);
+                  const { info: rowInfo, share } = infoOf(it);
+                  const focused = !!focusedRow && it.key === focusedRow.key;
+                  return (
+                    <li key={it.key}>
+                      <button
+                        type="button"
+                        className={`row${hover?.title === rowInfo.title ? " hovered" : ""}${focused ? " focused" : ""}`}
+                        aria-pressed={focused || undefined}
+                        style={{ cursor: it.drill ? "zoom-in" : "pointer" }}
+                        onClick={clickOn(it)}
+                        onMouseEnter={() => setHover(rowInfo)}
+                        onMouseLeave={() => setHover(null)}
+                        onFocus={() => setHover(rowInfo)}
+                        onBlur={() => setHover(null)}
+                      >
+                        <span className="swatch" style={{ background: bg }} aria-hidden />
+                        <span className="code">{it.code}</span>
+                        <span className="title" lang="sv">
+                          {it.label}
+                        </span>
+                        <span className="value">{fmd(it.v)}</span>
+                        <span className="share">{share}</span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </>
         )}
       </div>
 
