@@ -8,6 +8,8 @@ import { BudgetJsonSchema, type BudgetJson } from "../types/BudgetJsonSchema";
 import { InflationSchema } from "../types/InflationSchema";
 import { HEIGHT, WIDTH, pageDescription, pageTitle, renderPng, routeForImage, socialImagePath, type Data } from "./social";
 import { buildUrl, parseRoute } from "./web/routes";
+import { parseMarkdown } from "./markdown";
+import { HEAD_LINKS, canonicalPath, prerender, robotsTxt, sitemapXml, structuredData } from "./seo";
 
 const root = new URL("..", import.meta.url).pathname;
 
@@ -35,6 +37,12 @@ function listSources() {
     .map((f) => ({ file: f, label: /inflation/i.test(f) ? "Inflation i Sverige (SCB)" : f, size: Bun.file(`${root}examples/${f}`).size }));
   return [...budgets, ...others];
 }
+
+/** The about page's text, for the static HTML crawlers get (the app bundles its own copy). */
+const aboutPromise = Bun.file(`${root}content/om.md`)
+  .text()
+  .then(parseMarkdown)
+  .catch(() => []);
 
 /** Favicon, app icons, the social share image and the web manifest, from assets/. */
 const asset = (file: string, type: string) =>
@@ -103,9 +111,10 @@ async function bundledPage(): Promise<Response> {
 }
 
 /**
- * The app page, with the share tags set for the URL: the title, a description
- * and an og:image of the chart the page shows, so a link to a drilled-down
- * view previews that view.
+ * The app page, with the head set for the URL: the title, a description, the
+ * canonical URL, an og:image of the chart the page shows (so a link to a
+ * drilled-down view previews that view), structured data, and in #root the
+ * static HTML that crawlers get until the app mounts (src/seo.ts).
  */
 async function page(req: Request): Promise<Response> {
   const url = new URL(req.url);
@@ -118,7 +127,10 @@ async function page(req: Request): Promise<Response> {
   const description = pageDescription(route, data);
   const imagePath = socialImagePath(url);
   const image = imagePath ? { url: `${origin}${imagePath}`, w: WIDTH, h: HEIGHT, alt: title } : { url: `${origin}/social.png`, w: 1280, h: 640, alt: "Statsbudgeten.se" };
-  const canonical = `${origin}${buildUrl({ ...route, q: "" }, data.years[0] ?? null)}`;
+  const canonical = `${origin}${canonicalPath(route, data)}`;
+  const jsonLd = structuredData(route, data, origin)
+    .map((d) => `<script type="application/ld+json">${JSON.stringify(d).replace(/</g, "\\u003c")}</script>`)
+    .join("");
   const set = (attr: string, value: string) => ({
     element: (el: HTMLRewriterTypes.Element) => {
       el.setAttribute(attr, value);
@@ -129,6 +141,7 @@ async function page(req: Request): Promise<Response> {
       if (description) el.setAttribute("content", description);
     },
   };
+  const about = await aboutPromise;
   return new HTMLRewriter()
     .on("title", {
       element: (el) => {
@@ -144,8 +157,29 @@ async function page(req: Request): Promise<Response> {
     .on('meta[property="og:image:alt"]', set("content", image.alt))
     .on('meta[property="og:description"]', describe)
     .on('meta[name="description"]', describe)
+    // Search results are not pages to index; the canonical /sok is.
+    .on('meta[name="robots"]', set("content", route.mode === "search" ? "noindex, follow" : "index, follow, max-image-preview:large"))
+    .on("head", {
+      element: (el) => {
+        el.append(HEAD_LINKS + jsonLd, { html: true });
+      },
+    })
+    .on("#root", {
+      element: (el) => {
+        el.setInnerContent(prerender(route, data, about), { html: true });
+      },
+    })
     .transform(html);
 }
+
+/** Text responses that search engines fetch; the origin is the public one. */
+const text = (body: string, type: string) => new Response(body, { headers: { "content-type": type, "cache-control": "public, max-age=3600" } });
+async function sitemap(req: Request): Promise<Response> {
+  const data = await loadData().catch(() => null);
+  if (!data) return new Response("Not found", { status: 404 });
+  return text(sitemapXml(data, SITE ?? new URL(req.url).origin), "application/xml; charset=utf-8");
+}
+const robots = (req: Request) => text(robotsTxt(SITE ?? new URL(req.url).origin), "text/plain; charset=utf-8");
 
 const server = Bun.serve({
   port: Number(process.env.PORT ?? 3000),
@@ -161,6 +195,9 @@ const server = Bun.serve({
     // The bundled app page itself; `page` fetches it and fills in the share tags.
     "/__index": index,
     "/social/*": socialImage,
+    "/sitemap.xml": sitemap,
+    "/robots.txt": robots,
+    "/favicon.ico": () => asset("favicon.ico", "image/x-icon"),
     "/favicon.svg": () => asset("favicon.svg", "image/svg+xml"),
     "/apple-touch-icon.png": () => asset("apple-touch-icon.png", "image/png"),
     "/icon-192.png": () => asset("icon-192.png", "image/png"),
