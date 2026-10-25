@@ -154,7 +154,7 @@ export function blocksHtml(blocks: Block[]): string {
 const link = (path: string, text: string) => `<a href="${esc(path)}">${esc(text)}</a>`;
 
 /** An amount and its share of a total; a negative amount (a deduction) has no share. */
-const amount = (v: number, of: number) => (v > 0 ? `${fmd(v)} (${fpct((v / of) * 100)})` : `−${fmd(-v)}`);
+const amount = (v: number, of: number) => (v > 0 ? `${fmd(v)} (${fpct((v / Math.abs(of)) * 100)})` : `−${fmd(-v)}`);
 
 /** A posting's or group's amount in every year that has it, oldest first. */
 function history(data: Data, view: Route["view"], group: number, item: number | null): { year: number; v: number }[] {

@@ -400,7 +400,7 @@ function focusPanel(box: Box, s: Scene): string {
 /** The tiles at the scene's drill level, laid out over the box like the app's map. */
 function treemap(box: Box, s: Scene): string {
   const { items, group, focused } = s;
-  const share = (it: Item) => fpct((it.v / (group ? s.parentTotal : s.gross)) * 100);
+  const share = (it: Item) => fpct((it.v / Math.abs(group ? s.parentTotal : s.gross)) * 100);
   const out: string[] = [];
   const defs: string[] = [];
   layout(items, box.w, box.h).forEach(({ it, x: x0, y: y0, w, h }, i) => {
