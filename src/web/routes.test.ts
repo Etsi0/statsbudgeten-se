@@ -15,6 +15,11 @@ describe("parseRoute", () => {
     expect(buildUrl({ mode: "about", view: "exp", year: 2023, group: null, rest: false, item: null, real: true, unit: "kr", scale: "zero", q: "" }, 2026)).toBe("/om?year=2023&inflation=1");
   });
 
+  test("/uppdateringar is the updates page", () => {
+    expect(at("/uppdateringar")).toMatchObject({ mode: "updates", group: null });
+    expect(buildUrl({ mode: "updates", view: "exp", year: 2026, group: null, rest: false, item: null, real: false, unit: "kr", scale: "zero", q: "" }, 2026)).toBe("/uppdateringar");
+  });
+
   test("/sok is the search page and keeps the query", () => {
     expect(at("/sok")).toMatchObject({ mode: "search", q: "" });
     expect(at("/sok?q=f%C3%B6rsvar&year=2023")).toMatchObject({ mode: "search", q: "försvar", year: 2023 });

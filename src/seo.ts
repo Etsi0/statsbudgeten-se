@@ -8,6 +8,7 @@
  * about (its title, the numbers, the postings) and links to every page a
  * level down, so the whole site is reachable from plain HTML.
  */
+import type { Changelog } from "../types/ChangelogSchema";
 import type { Block, Inline } from "./markdown";
 import { pageDescription, resolve, type Data } from "./social";
 import { COPY, fmd, fpct } from "./web/model";
@@ -53,7 +54,7 @@ export function canonicalPath(route: Route, data: Data): string {
 /** Every indexable path: the overview, about, and every year's views, groups and postings. */
 export function sitemapPaths(data: Data): string[] {
   const latest = data.years[0] ?? null;
-  const paths = ["/", "/om"];
+  const paths = ["/", "/om", "/uppdateringar"];
   const base = { mode: "explore" as const, rest: false, real: false, unit: "kr" as const, q: "" };
   for (const year of data.years) {
     const budget = data.budgets[year];
@@ -186,12 +187,18 @@ const historyTable = (rows: { year: number; v: number }[], what: string) =>
  * its numbers as a table, and links to the pages below it. The app replaces
  * it on mount; crawlers and readers without JavaScript keep it.
  */
-export function prerender(route: Route, data: Data, about: Block[]): string {
+export function prerender(route: Route, data: Data, about: Block[], changelog: Changelog | null = null): string {
   const latest = data.years[0] ?? null;
-  const nav = `<nav aria-label="Huvudmeny">${[link("/", "Översikt"), link("/utgifter", "Utgifter"), link("/inkomster", "Inkomster"), link("/om", "Om sajten")].join(" · ")}</nav>`;
+  const nav = `<nav aria-label="Huvudmeny">${[link("/", "Översikt"), link("/utgifter", "Utgifter"), link("/inkomster", "Inkomster"), link("/om", "Om sajten"), link("/uppdateringar", "Uppdateringar")].join(" · ")}</nav>`;
   const foot = `<p>Alla belopp kommer oförändrade från Regeringskansliet och SCB. Sajten är fristående och öppen källkod.</p>`;
 
   if (route.mode === "about") return `<article class="prerender">${nav}${blocksHtml(about)}</article>`;
+  if (route.mode === "updates") {
+    const items = (changelog?.commits ?? [])
+      .map((c) => `<li><time datetime="${esc(c.date)}">${esc(c.date)}</time> ${esc(c.subject)} · ${esc(c.author)}</li>`)
+      .join("");
+    return `<article class="prerender">${nav}<h1>Uppdateringar</h1><p>Vad som ändrats på statsbudgeten.se, ur versionshistoriken för den version av sajten som är i drift.</p><ul>${items}</ul>${foot}</article>`;
+  }
   if (route.mode === "search") {
     return `<article class="prerender">${nav}<h1>Sök i statsbudgeten</h1><p>Sök bland utgiftsområden, anslag, inkomsttyper och inkomsttitlar i det valda budgetåret.</p>${foot}</article>`;
   }

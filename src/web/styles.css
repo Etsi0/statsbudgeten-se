@@ -1049,6 +1049,27 @@ dialog.share::backdrop {
   font-variant-numeric: tabular-nums;
 }
 
+/* ---- Updates page: the commit list, grouped by day ---- */
+
+.prose .commits {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 20px;
+}
+.prose .commits li {
+  padding: 6px 0;
+  border-top: 1px solid var(--divider);
+}
+.prose .commits li:last-child {
+  border-bottom: 1px solid var(--divider);
+}
+.prose .commits a {
+  text-decoration: none;
+}
+.prose .commits a:hover {
+  text-decoration: underline;
+}
+
 /* ---- Search page ---- */
 
 .panel.search {

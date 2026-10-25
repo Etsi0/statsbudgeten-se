@@ -5,6 +5,7 @@
  */
 import index from "./web/index.html";
 import { BudgetJsonSchema, type BudgetJson } from "../types/BudgetJsonSchema";
+import { ChangelogSchema } from "../types/ChangelogSchema";
 import { InflationSchema } from "../types/InflationSchema";
 import { HEIGHT, WIDTH, pageDescription, pageTitle, renderPng, routeForImage, socialImagePath, type Data } from "./social";
 import { buildUrl, parseRoute } from "./web/routes";
@@ -44,6 +45,12 @@ const aboutPromise = Bun.file(`${root}content/om.md`)
   .text()
   .then(parseMarkdown)
   .catch(() => []);
+
+/** The committed changelog (bun run changelog), for the Uppdateringar page. */
+const changelogPromise = Bun.file(`${root}data/changelog.json`)
+  .json()
+  .then((j) => ChangelogSchema.parse(j))
+  .catch(() => null);
 
 /** Favicon, app icons, the social share image and the web manifest, from assets/. */
 const asset = (file: string, type: string) =>
@@ -147,6 +154,7 @@ async function page(req: Request): Promise<Response> {
     },
   };
   const about = await aboutPromise;
+  const changelog = await changelogPromise;
   return new HTMLRewriter()
     .on("title", {
       element: (el) => {
@@ -171,7 +179,7 @@ async function page(req: Request): Promise<Response> {
     })
     .on("#root", {
       element: (el) => {
-        el.setInnerContent(prerender(route, data, about), { html: true });
+        el.setInnerContent(prerender(route, data, about, changelog), { html: true });
       },
     })
     .transform(html);
@@ -196,6 +204,7 @@ const server = Bun.serve({
     "/inkomster": page,
     "/inkomster/*": page,
     "/om": page,
+    "/uppdateringar": page,
     "/sok": page,
     // The bundled app page itself; `page` fetches it and fills in the share tags.
     "/__index": index,
@@ -228,6 +237,8 @@ const server = Bun.serve({
       });
     },
     "/api/years": () => Response.json(listYears()),
+    "/api/changelog": async () =>
+      Response.json((await changelogPromise) ?? { repo: null, commits: [] }, { headers: { "cache-control": "public, max-age=3600" } }),
     "/api/inflation": async () => {
       const file = Bun.file(`${root}data/inflation.json`);
       if (!(await file.exists())) return Response.json({ rates: {} });
