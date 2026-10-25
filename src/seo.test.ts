@@ -163,6 +163,7 @@ describe("prerender", () => {
   });
   test("the head links name the favicon routes Google looks for", () => {
     expect(HEAD_LINKS).toContain('<link rel="icon" href="/favicon.ico"');
+    expect(HEAD_LINKS).toContain('<link rel="icon" href="/favicon-96.png" type="image/png" sizes="96x96">');
     expect(HEAD_LINKS).toContain('rel="apple-touch-icon"');
     expect(HEAD_LINKS).toContain('rel="manifest"');
   });

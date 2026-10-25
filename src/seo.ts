@@ -21,10 +21,13 @@ export const SITE_TAGLINE = "Sveriges statsbudget som en karta";
  * rather than written in index.html, because Bun's HTML bundler tries to
  * resolve every link href as a build asset and fails on these routes. Google
  * only picks up a favicon it finds as a <link rel="icon"> on the front page,
- * and it wants /favicon.ico as well.
+ * and it wants /favicon.ico as well. The 96px PNG is for Google too: it asks
+ * for a square icon in a multiple of 48px, and its parser is safest with a
+ * plain PNG (the .ico is kept to classic BMP entries for the same reason).
  */
 export const HEAD_LINKS = [
   '<link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48">',
+  '<link rel="icon" href="/favicon-96.png" type="image/png" sizes="96x96">',
   '<link rel="icon" href="/favicon.svg" type="image/svg+xml" sizes="any">',
   '<link rel="apple-touch-icon" href="/apple-touch-icon.png">',
   '<link rel="manifest" href="/site.webmanifest">',

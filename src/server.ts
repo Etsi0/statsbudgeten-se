@@ -199,6 +199,7 @@ const server = Bun.serve({
     "/robots.txt": robots,
     "/favicon.ico": () => asset("favicon.ico", "image/x-icon"),
     "/favicon.svg": () => asset("favicon.svg", "image/svg+xml"),
+    "/favicon-96.png": () => asset("favicon-96.png", "image/png"),
     "/apple-touch-icon.png": () => asset("apple-touch-icon.png", "image/png"),
     "/icon-192.png": () => asset("icon-192.png", "image/png"),
     "/icon-512.png": () => asset("icon-512.png", "image/png"),
