@@ -40,6 +40,7 @@ gets a history line chart. The URL mirrors what is on screen (`src/web/routes.ts
 | `/inkomster/1000/1111` | Inkomsttyp 1000 with inkomsttitel 1111 focused |
 | `/sok?q=försvar` | Search over areas and postings in the selected year |
 | `/om` | About page, written in `content/om.md` (`![title](youtube url)` on its own line embeds a video) |
+| `/uppdateringar` | Updates page: the deployed version's commit history, from the committed `data/changelog.json` |
 | `/sitemap.xml`, `/robots.txt` | For search engines: every page of every year, generated from the data |
 | `/mcp` | [MCP](https://modelcontextprotocol.io) endpoint for LLM clients, see below |
 | `…?year=2024` | Budget year (omitted for the latest year) |
@@ -117,6 +118,7 @@ files are committed, so a checkout runs without converting anything.
 bun run convert                  # every examples/<year>.xlsx -> data/<year>.json
 bun run convert path/to/2027.xlsx
 bun run convert-inflation        # examples/inflation.xlsx -> data/inflation.json
+bun run changelog                # git history -> data/changelog.json (the Uppdateringar page)
 ```
 
 - `docs/BUDGET_SCHEMA.md` describes the JSON shape and how the workbooks map to it,

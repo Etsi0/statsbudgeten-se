@@ -9,6 +9,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { BudgetJsonSchema, type BudgetJson } from "../../types/BudgetJsonSchema";
+import { ChangelogSchema, type Changelog, type ChangelogCommit } from "../../types/ChangelogSchema";
 import { InflationSchema } from "../../types/InflationSchema";
 import { chooseBaseYear, inflationFactors } from "../inflation";
 import { initAnalytics, trackEvent, trackPageView } from "./analytics";
@@ -583,6 +584,88 @@ function About() {
   );
 }
 
+// ---- Updates page --------------------------------------------------------------
+
+/** Dates like "25 oktober 2026". */
+const DAY = new Intl.DateTimeFormat("sv-SE", { dateStyle: "long" });
+
+/**
+ * The Uppdateringar page: the deployed version's commit history, from the
+ * committed data/changelog.json (src/changelog.ts), grouped by day. Subjects
+ * link to the commit on GitHub when the repository URL is known.
+ */
+function Updates() {
+  const [log, setLog] = useState<Changelog | null | undefined>(undefined);
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/changelog")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => {
+        if (cancelled) return;
+        const parsed = ChangelogSchema.safeParse(j);
+        setLog(parsed.success ? parsed.data : null);
+      })
+      .catch(() => !cancelled && setLog(null));
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const days = useMemo(() => {
+    const byDay = new Map<string, ChangelogCommit[]>();
+    for (const c of log?.commits ?? []) {
+      if (!byDay.has(c.date)) byDay.set(c.date, []);
+      byDay.get(c.date)!.push(c);
+    }
+    return [...byDay.entries()];
+  }, [log]);
+
+  return (
+    <div className="panel about updates">
+      <article className="prose" lang="sv">
+        <h1>Uppdateringar</h1>
+        <p>
+          Vad som ändrats på statsbudgeten.se, ur versionshistoriken för den version av sajten som är i drift.
+          {log?.repo && (
+            <>
+              {" "}
+              Hela historiken finns på{" "}
+              <a href={log.repo} target="_blank" rel="noopener">
+                GitHub
+              </a>
+              .
+            </>
+          )}
+        </p>
+        {log === undefined && <p className="muted">Hämtar ändringar …</p>}
+        {log === null && <p className="muted">Kunde inte läsa ändringshistoriken.</p>}
+        {log?.commits.length === 0 && <p className="muted">Inga ändringar att visa.</p>}
+        {days.map(([date, commits]) => (
+          <section key={date}>
+            <h2>
+              <time dateTime={date}>{DAY.format(new Date(date))}</time>
+            </h2>
+            <ul className="commits">
+              {commits.map((c) => (
+                <li key={c.hash}>
+                  {log?.repo ? (
+                    <a href={`${log.repo}/commit/${c.hash}`} target="_blank" rel="noopener">
+                      {c.subject}
+                    </a>
+                  ) : (
+                    c.subject
+                  )}
+                  <span className="muted"> · {c.author}</span>
+                </li>
+              ))}
+            </ul>
+          </section>
+        ))}
+      </article>
+    </div>
+  );
+}
+
 // ---- Search page ---------------------------------------------------------------
 
 type SearchProps = {
@@ -897,7 +980,7 @@ function App() {
       if (menuOpen) return setMenuOpen(false);
       if (shareOpen) return; // the dialog closes itself
       if (settingsOpen) return setSettingsOpen(false);
-      if (mode === "about") return showOverview();
+      if (mode === "about" || mode === "updates") return showOverview();
       if (mode === "search") return q ? setQ("") : showOverview();
       if (itemKey != null || pendingItem != null) {
         setItemKey(null);
@@ -999,6 +1082,14 @@ function App() {
     setHover(null);
   };
 
+  const showUpdates = () => {
+    setMode("updates");
+    setUo(null);
+    setRest(false);
+    clearFocus();
+    setHover(null);
+  };
+
   const showSearch = () => {
     setMode("search");
     setUo(null);
@@ -1093,6 +1184,8 @@ function App() {
   const pageTitle =
     mode === "about"
       ? "Om sajten"
+      : mode === "updates"
+      ? "Uppdateringar"
       : mode === "search"
       ? q ? `Sök: ${q}` : "Sök"
       : mode === "overview"
@@ -1198,6 +1291,8 @@ function App() {
   const saldoShown = B && year != null ? display.toUnit(B.revenuesTotal * f, year) - display.toUnit(B.expensesTotal * f, year) : 0;
   const base: Info = mode === "about"
     ? { title: "Om Statsbudgeten", hint: "Esc eller Översikt för att gå tillbaka" }
+    : mode === "updates"
+    ? { title: "Uppdateringar", hint: "Esc eller Översikt för att gå tillbaka" }
     : mode === "search"
     ? { title: `Sök i budgeten ${year ?? ""}`, hint: q ? "Pil upp/ner och Enter väljer · Esc rensar" : "Skriv för att söka" }
     : !B
@@ -1225,6 +1320,7 @@ function App() {
   const info = hover ?? base;
   const overview = mode === "overview";
   const about = mode === "about";
+  const updates = mode === "updates";
   const searching = mode === "search";
 
   return (
@@ -1287,7 +1383,7 @@ function App() {
               ["rev", "var(--revenue)", B ? B.revenuesTotal * f : undefined],
             ] as const
           ).map(([k, dot, tot]) => {
-            const active = !overview && !about && !searching && view === k;
+            const active = !overview && !about && !updates && !searching && view === k;
             return (
               <button key={k} type="button" className={`tab${active ? " active" : ""}`} aria-current={active ? "page" : undefined} onClick={() => showGraph(k)}>
                 <span className="dot" style={{ background: dot }} />
@@ -1431,6 +1527,12 @@ function App() {
                 Om sajten
               </button>
             </span>
+          ) : updates ? (
+            <span className="crumb">
+              <button type="button" className="current" disabled>
+                Uppdateringar
+              </button>
+            </span>
           ) : searching ? (
             <span className="crumb">
               <button type="button" className="current" disabled>
@@ -1494,7 +1596,7 @@ function App() {
             </>
           )}
         </nav>
-        {!about && !searching && B && (
+        {!about && !updates && !searching && B && (
           <button type="button" className="share-toggle" onClick={() => setShareOpen(true)} title="Dela som bild eller länk">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
               <path d="M12 3v13M7 8l5-5 5 5M5 14v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5" />
@@ -1507,13 +1609,14 @@ function App() {
 
       <div className="stage" ref={stageRef} inert={menuOpen || undefined}>
         {about && <About />}
+        {updates && <Updates />}
         {searching && <Search budget={B} year={year} q={q} onChange={setQ} onPick={pickHit} />}
 
         {overview && B && year != null && (
           <Overview years={yrs} budgets={budgets} year={year} scale={scale} {...prices} {...display} />
         )}
 
-        {!overview && !about && !searching && group && year != null && multiYear && (
+        {!overview && !about && !updates && !searching && group && year != null && multiYear && (
           <FocusPanel
             years={yrs}
             budgets={budgets}
@@ -1531,7 +1634,7 @@ function App() {
           />
         )}
 
-        {!overview && !about && !searching && (
+        {!overview && !about && !updates && !searching && (
           <>
             <div className="map" style={{ height: mapH }}>
               {placed.map(({ it, x, y, w, h }) => {
@@ -1604,7 +1707,7 @@ function App() {
         <span className="hint">{info.hint}</span>
       </footer>
       <p className="credit" inert={menuOpen || undefined}>
-        © {new Date().getFullYear()} <a href="https://proddalbert.se" target="_blank" rel="noopener">Albert (@ProddAlbert)</a> · Data från Regeringskansliet och SCB · <a href="https://github.com/kodalbert/statsbudgeten-se" target="_blank" rel="noopener">Öppen källkod</a>
+        © {new Date().getFullYear()} <a href="https://proddalbert.se" target="_blank" rel="noopener">Albert (@ProddAlbert)</a> · Data från Regeringskansliet och SCB · <a href="https://github.com/kodalbert/statsbudgeten-se" target="_blank" rel="noopener">Öppen källkod</a> · <a href="/uppdateringar" onClick={(e) => { e.preventDefault(); showUpdates(); }}>Uppdateringar</a>
       </p>
     </div>
   );

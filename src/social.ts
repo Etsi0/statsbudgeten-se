@@ -110,6 +110,7 @@ export function resolve(route: Route, data: Data): Scene | null {
 /** The document title for a route, as the app sets it. */
 export function pageTitle(route: Route, data: Data): string {
   if (route.mode === "about") return "Om sajten";
+  if (route.mode === "updates") return "Uppdateringar";
   if (route.mode === "search") return route.q ? `Sök: ${route.q}` : "Sök";
   if (route.mode === "overview") return "Inkomster och utgifter";
   const s = resolve(route, data);

@@ -16,6 +16,7 @@ bun test -t "name"                 # tests matching a name
 bun run convert                    # every examples/<year>.xlsx -> data/<year>.json
 bun run convert path/to/2027.xlsx  # one workbook
 bun run convert-inflation          # examples/inflation.xlsx -> data/inflation.json
+bun run changelog                  # git history -> data/changelog.json (the Uppdateringar page)
 ```
 
 There is no build step: Bun serves `src/web/index.html`, which bundles `src/web/frontend.tsx` directly. Deploys go to Fly.io with `fly deploy` (`fly.toml`, `Dockerfile`).
@@ -33,6 +34,8 @@ There is no build step: Bun serves `src/web/index.html`, which bundles `src/web/
 **MCP server** (`src/mcp.ts`). Stateless Streamable HTTP, written against the protocol directly — deliberately no MCP SDK. Tool list, argument schemas (enumerating the years/areas that actually exist), resource list and search indexes are built once from the data at startup. POST only; GET/DELETE answer 405.
 
 **Inflation** (`src/inflation.ts`). `rates[Y]` is CPI change from Y−1 to Y; converting year A into year B's prices chains rates A+1…B. Amounts are re-expressed in the latest budget year that has its own rate; years that can't be converted stay nominal and are marked `*`. See `data/README.md`.
+
+**Changelog** (`src/changelog.ts`). The Uppdateringar page (`/uppdateringar`) shows the deployed version's git history from the committed `data/changelog.json`, written by `bun run changelog` (the production image has no `.git`) — run it and commit before deploying. Merge commits are skipped and agent/bot authors (Claude et al.) are replaced by the first human co-author or dropped; only names, never emails.
 
 **Other pieces.** `src/markdown.ts` is a small Markdown subset for the about page (`content/om.md`), parsed at bundle time by a Bun macro (`src/web/content.macro.ts`); a `![title](youtube url)` line embeds a video, and the `[sources]` line becomes workbook download links. `src/search.ts` is case- and diacritic-insensitive search over areas and postings. `src/web/analytics.ts` holds the GA measurement ID; not loaded on localhost. Charts are plain DOM/SVG — no charting library.
 
