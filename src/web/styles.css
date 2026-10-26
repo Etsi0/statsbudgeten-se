@@ -277,6 +277,15 @@ button {
 .popover .year-picker .label {
   font-weight: 600;
 }
+.popover .budget-years {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+.popover .budget-years button {
+  flex: none;
+  padding: 5px 2px;
+  text-align: center;
+}
 .span-pick {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -1379,8 +1388,17 @@ dialog.share::backdrop {
   }
   .menu-items .year-picker {
     flex-direction: column;
-    align-items: flex-start;
+    align-items: stretch;
     gap: 8px;
+  }
+  .menu-items .budget-years {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    width: 100%;
+  }
+  .menu-items .budget-years button {
+    padding: 8px 4px;
+    text-align: center;
   }
   .menu-items .unit-picker .seg {
     width: 100%;
