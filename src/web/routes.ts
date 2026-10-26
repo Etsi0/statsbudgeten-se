@@ -12,9 +12,9 @@
  *   /utgifter/6/ovriga/23        …with anslag 23 focused
  *   /inkomster/1000/1111         inkomsttyp 1000 with inkomsttitel 1111 focused
  *   …?year=2024                  budget year (omitted for the latest year)
- *   …?inflation=1                amounts adjusted for inflation
+ *   …?inflation=0                nominal amounts (adjustment is the default; inflation=1 is the same)
  *   …?andel=inkomster            graphs in percent of the year's revenues (andel=utgifter: of expenses)
- *   …?skala=relativ              the graphs' y-axis follows the data instead of starting at zero
+ *   …?skala=noll                 y-axis starts at zero (the default follows the data; skala=relativ is the same)
  */
 
 export type View = "exp" | "rev";
@@ -50,10 +50,12 @@ const parseNat = (s: string | undefined): number | null => (s && /^\d+$/.test(s)
 
 export function parseRoute(url: URL): Route {
   const parts = url.pathname.split("/").filter(Boolean);
-  const real = url.searchParams.get("inflation") === "1";
+  // Adjustment is the default. inflation=0 turns it off; inflation=1 is the older spelling of on.
+  const real = url.searchParams.get("inflation") !== "0";
   const year = parseYear(url.searchParams.get("year"));
   const unit: Unit = SLUG_VIEW[url.searchParams.get("andel") ?? ""] ?? "kr";
-  const scale: Scale = url.searchParams.get("skala") === "relativ" ? "relative" : "zero";
+  // The axis follows the data unless skala=noll. skala=relativ is the older spelling of the default.
+  const scale: Scale = url.searchParams.get("skala") === "noll" ? "zero" : "relative";
   const none = { group: null, rest: false, item: null, real, unit, scale, q: "" };
   if (parts[0] === "om") return { mode: "about", view: "exp", year, ...none };
   if (parts[0] === "uppdateringar") return { mode: "updates", view: "exp", year, ...none };
@@ -89,10 +91,10 @@ export function buildUrl(r: Route, latest: number | null): string {
   const q = new URLSearchParams();
   if (r.mode === "search" && r.q) q.set("q", r.q);
   if (r.year != null && r.year !== latest) q.set("year", String(r.year));
-  if (r.real) q.set("inflation", "1");
+  if (!r.real) q.set("inflation", "0");
   const andel = UNIT_SLUG[r.unit];
   if (andel) q.set("andel", andel);
-  if (r.scale === "relative") q.set("skala", "relativ");
+  if (r.scale === "zero") q.set("skala", "noll");
   const s = q.toString();
   return s ? `${path}?${s}` : path;
 }

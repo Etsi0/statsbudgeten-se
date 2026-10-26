@@ -46,7 +46,8 @@ describe("titles", () => {
 
   test("descriptions name the figures", () => {
     expect(pageDescription(parseRoute(url("/")), data)).toMatch(/^Statens budget \d{4}: utgifter .* mdkr, inkomster .* mdkr, saldo /);
-    expect(pageDescription(parseRoute(url("/utgifter")), data)).toMatch(/utgiftsområden\.$/);
+    expect(pageDescription(parseRoute(url("/utgifter")), data)).toMatch(/utgiftsområden · i \d{4} års priser\.$/);
+    expect(pageDescription(parseRoute(url("/utgifter?inflation=0")), data)).toMatch(/utgiftsområden\.$/);
     expect(pageDescription(parseRoute(url("/om")), data)).toBeNull();
   });
 });

@@ -78,8 +78,8 @@ export const UNITS: { k: Unit; label: string; note: string }[] = [
 
 /** The y-axis options in the settings, see the `skala` query parameter. */
 export const SCALES: { k: Scale; label: string; title: string }[] = [
-  { k: "zero", label: "Börja på 0", title: "Y-axeln börjar på noll, så linjens höjd visar beloppets storlek" },
   { k: "relative", label: "Relativ", title: "Y-axeln följer värdena, så små förändringar syns tydligare" },
+  { k: "zero", label: "Börja på 0", title: "Y-axeln börjar på noll, så linjens höjd visar beloppets storlek" },
 ];
 
 // ---- Data model ---------------------------------------------------------------
