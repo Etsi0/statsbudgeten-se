@@ -95,6 +95,8 @@ export function createMcp(data: Data, site: string | null = null) {
     real,
     unit: "kr",
     scale: "relative",
+    from: null,
+    to: null,
     q: "",
   });
   const link = (ctx: Ctx, route: Route) => `${ctx.origin}${buildUrl(route, latest)}`;

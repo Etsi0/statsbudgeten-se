@@ -47,6 +47,7 @@ gets a history line chart. The URL mirrors what is on screen (`src/web/routes.ts
 | `…?inflation=0` | Nominal amounts. Omitted, and `inflation=1`, adjusts for inflation |
 | `…?andel=inkomster` | Graphs in percent of the year's revenues (`andel=utgifter`: of expenses) |
 | `…?skala=noll` | Y-axis starts at zero. Omitted, and `skala=relativ`, follows the data |
+| `…?fran=2018&till=2021` | Years the charts cover. Omitted means every budget year from 2010 |
 
 ## Search engines
 
