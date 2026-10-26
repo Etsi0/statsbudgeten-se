@@ -129,7 +129,7 @@ describe("tools", () => {
     for (const p of r.points) expect(p.amount).toBe(data.budgets[p.year]!.expenses.find((e) => e.uo === 6)!.total);
     expect(r.points[0].adjusted).toBeUndefined();
     expect(r.priceLevelYear).toBeUndefined();
-    expect(r.url).toBe("https://statsbudgeten.se/utgifter/6");
+    expect(r.url).toBe("https://statsbudgeten.se/utgifter/6?inflation=0");
   });
   test("get_history adjusts for inflation on request", () => {
     const r = structured("get_history", { view: "utgifter", group: 6, inflation: true });
@@ -138,7 +138,7 @@ describe("tools", () => {
     expect(base.adjusted).toBe(base.amount);
     const earlier = r.points.find((p: any) => p.year < r.priceLevelYear);
     if (earlier) expect(earlier.adjusted).toBeGreaterThan(earlier.amount);
-    expect(r.url).toBe("https://statsbudgeten.se/utgifter/6?inflation=1");
+    expect(r.url).toBe("https://statsbudgeten.se/utgifter/6");
   });
   test("get_history for one posting follows the title across years", () => {
     const g = b.expenses.find((e) => e.uo === 6)!;

@@ -46,7 +46,7 @@ const yearOf = (route: Route, data: Data) => (route.year != null && data.years.i
  */
 export function canonicalPath(route: Route, data: Data): string {
   const latest = data.years[0] ?? null;
-  return buildUrl({ ...route, q: "", real: false, unit: "kr", rest: false, year: yearOf(route, data) }, latest);
+  return buildUrl({ ...route, q: "", real: true, unit: "kr", scale: "relative", rest: false, year: yearOf(route, data) }, latest);
 }
 
 // ---- Sitemap and robots -------------------------------------------------------------
@@ -55,7 +55,7 @@ export function canonicalPath(route: Route, data: Data): string {
 export function sitemapPaths(data: Data): string[] {
   const latest = data.years[0] ?? null;
   const paths = ["/", "/om", "/uppdateringar"];
-  const base = { mode: "explore" as const, rest: false, real: false, unit: "kr" as const, q: "" };
+  const base = { mode: "explore" as const, rest: false, real: true, unit: "kr" as const, scale: "relative" as const, q: "" };
   for (const year of data.years) {
     const budget = data.budgets[year];
     if (!budget) continue;
@@ -110,7 +110,7 @@ export function structuredData(route: Route, data: Data, origin: string): Record
     if (s) {
       const T = COPY[route.view];
       const latest = data.years[0] ?? null;
-      const r = { ...route, q: "", real: false, unit: "kr" as const, year: yearOf(route, data) };
+      const r = { ...route, q: "", real: true, unit: "kr" as const, year: yearOf(route, data) };
       const crumbs: { name: string; path: string }[] = [
         { name: SITE_NAME, path: "/" },
         { name: `${T.label} ${s.year}`, path: buildUrl({ ...r, group: null, rest: false, item: null }, latest) },
@@ -209,7 +209,7 @@ export function prerender(route: Route, data: Data, about: Block[], changelog: C
       .map((y) => {
         const b = data.budgets[y];
         if (!b) return "";
-        const r = { mode: "explore" as const, year: y, group: null, rest: false, item: null, real: false, unit: "kr" as const, q: "" };
+        const r = { mode: "explore" as const, year: y, group: null, rest: false, item: null, real: true, unit: "kr" as const, q: "" };
         const d = b.revenuesTotal - b.expensesTotal;
         return `<tr><th>${y}</th><td>${link(buildUrl({ ...r, view: "exp" }, latest), fmd(b.expensesTotal))}</td><td>${link(buildUrl({ ...r, view: "rev" }, latest), fmd(b.revenuesTotal))}</td><td>${esc((d < 0 ? "−" : "+") + fmd(Math.abs(d)))}</td></tr>`;
       })
@@ -220,7 +220,7 @@ export function prerender(route: Route, data: Data, about: Block[], changelog: C
   const s = resolve({ ...route, real: false, unit: "kr" }, data);
   if (!s) return `<article class="prerender">${nav}<h1>${esc(SITE_NAME)}</h1><p>${esc(SITE_TAGLINE)}</p></article>`;
   const T = COPY[route.view];
-  const r = { ...route, q: "", real: false, unit: "kr" as const, year: yearOf(route, data) };
+  const r = { ...route, q: "", real: true, unit: "kr" as const, year: yearOf(route, data) };
   const description = pageDescription({ ...route, real: false, unit: "kr" }, data) ?? "";
   const crumbs = [link("/", SITE_NAME), link(buildUrl({ ...r, group: null, rest: false, item: null }, latest), `${T.label} ${s.year}`)];
   if (s.group) crumbs.push(link(buildUrl({ ...r, rest: false, item: null }, latest), s.group.title));

@@ -44,9 +44,9 @@ gets a history line chart. The URL mirrors what is on screen (`src/web/routes.ts
 | `/sitemap.xml`, `/robots.txt` | For search engines: every page of every year, generated from the data |
 | `/mcp` | [MCP](https://modelcontextprotocol.io) endpoint for LLM clients, see below |
 | `…?year=2024` | Budget year (omitted for the latest year) |
-| `…?inflation=1` | Amounts adjusted for inflation |
+| `…?inflation=0` | Nominal amounts. Omitted, and `inflation=1`, adjusts for inflation |
 | `…?andel=inkomster` | Graphs in percent of the year's revenues (`andel=utgifter`: of expenses) |
-| `…?skala=relativ` | The graphs' y-axis follows the data instead of starting at zero |
+| `…?skala=noll` | Y-axis starts at zero. Omitted, and `skala=relativ`, follows the data |
 
 ## Search engines
 

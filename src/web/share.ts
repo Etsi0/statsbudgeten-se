@@ -4,7 +4,7 @@
  *
  *   /                                   → /social/oversikt.png
  *   /utgifter                           → /social/utgifter.png
- *   /utgifter/6/3?year=2024&inflation=1 → /social/utgifter/6/3.png?year=2024&inflation=1
+ *   /utgifter/6/3?year=2024             → /social/utgifter/6/3.png?year=2024
  *   …?format=story                      the same page as a 9:16 image
  *
  * The rendering itself lives in src/social.ts, which needs resvg and so

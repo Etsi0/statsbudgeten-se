@@ -29,7 +29,7 @@ describe("image URLs", () => {
     expect(socialImagePath(url("/"))).toBe("/social/oversikt.png");
     expect(socialImagePath(url("/utgifter"))).toBe("/social/utgifter.png");
     expect(socialImagePath(url("/inkomster/1000/1111"))).toBe("/social/inkomster/1000/1111.png");
-    expect(socialImagePath(url("/utgifter/6/ovriga/23?year=2024&inflation=1&andel=inkomster"))).toBe("/social/utgifter/6/ovriga/23.png?year=2024&inflation=1&andel=inkomster");
+    expect(socialImagePath(url("/utgifter/6/ovriga/23?year=2024&inflation=1&andel=inkomster"))).toBe("/social/utgifter/6/ovriga/23.png?year=2024&andel=inkomster");
     expect(socialImagePath(url("/om"))).toBeNull();
     expect(socialImagePath(url("/sok?q=försvar"))).toBeNull();
   });

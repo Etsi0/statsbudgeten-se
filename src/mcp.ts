@@ -85,7 +85,7 @@ export function createMcp(data: Data, site: string | null = null) {
   const codes = [...new Set(years.flatMap((y) => budget(y).revenues.map((g) => g.id_start)))].sort((a, b) => a - b);
   const indexes = new Map<number, SearchHit[]>(years.map((y) => [y, buildIndex(budget(y))]));
 
-  const explore = (view: View, group: number | null, item: number | null, year: number, real = false): Route => ({
+  const explore = (view: View, group: number | null, item: number | null, year: number, real = true): Route => ({
     mode: "explore",
     view,
     year,
@@ -94,7 +94,7 @@ export function createMcp(data: Data, site: string | null = null) {
     item,
     real,
     unit: "kr",
-    scale: "zero",
+    scale: "relative",
     q: "",
   });
   const link = (ctx: Ctx, route: Route) => `${ctx.origin}${buildUrl(route, latest)}`;
