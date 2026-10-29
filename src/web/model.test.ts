@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { fmd, niceScale, placeItems, readable, type Item } from "./model";
+import { fmd, fpct, levelItems, niceScale, placeItems, readable, type Item, type NormGroup } from "./model";
 
 const values = (s: ReturnType<typeof niceScale>) => s.grid.map((g) => g.v);
 
@@ -103,5 +103,62 @@ describe("placeItems", () => {
     const { placed, listed } = placeItems([item("a", 2), item("b", 1)], 10, 10);
     expect(placed.map((p) => p.it.key)).toEqual(["a"]);
     expect(listed.map((it) => it.key)).toEqual(["b"]);
+  });
+
+  test("negative items are never tiles, always list rows", () => {
+    const { placed, listed } = placeItems([item("a", 1000), item("b", 500), item("neg", -300)], 400, 300);
+    expect(placed.map((p) => p.it.key)).toEqual(["a", "b"]);
+    expect(listed.map((it) => it.key)).toEqual(["neg"]);
+    expect(placed.reduce((s, p) => s + p.w * p.h, 0)).toBeCloseTo(400 * 300, 3);
+  });
+
+  test("a level of only negative items has no tiles and lists everything", () => {
+    const { placed, listed } = placeItems([item("x", -2), item("y", -1)], 400, 300);
+    expect(placed).toEqual([]);
+    expect(listed.map((it) => it.key)).toEqual(["x", "y"]);
+  });
+});
+
+describe("fpct", () => {
+  test("negative shares keep the sign and pick precision by magnitude", () => {
+    expect(fpct(24)).toBe("24 %");
+    expect(fpct(-24)).toBe("−24 %");
+    expect(fpct(-2.4)).toBe("−2,4 %");
+    expect(fpct(-0.01)).toBe("<0,1 %");
+  });
+});
+
+describe("levelItems", () => {
+  const group = (key: string, total: number, rows: [number, string, number][]): NormGroup => ({
+    key,
+    code: key,
+    title: key,
+    total,
+    rows: rows.map(([id, title, v]) => ({ key: String(id), id, title, v })),
+  });
+  const all: NormGroup[] = [
+    group("ink1000", 700, [[1100, "Skatt", 900], [1141, "Pensionsavgift", -200]]),
+    group("ink7000", -150, [[7211, "Till fonder", -50], [7221, "Avräknad moms", -100]]),
+  ];
+
+  test("negative groups come after the positive ones at the root", () => {
+    const { items, parentTotal } = levelItems(all, "rev", null, false);
+    expect(items.map((it) => it.key)).toEqual(["ink1000", "ink7000"]);
+    expect(items[1]!.v).toBe(-150);
+    expect(items[1]!.drill).toBe(true);
+    // Shares are of the positive (gross) total only.
+    expect(parentTotal).toBe(700);
+  });
+
+  test("negative postings come last within their group", () => {
+    const { items } = levelItems(all, "rev", all[0]!, false);
+    expect(items.map((it) => it.key)).toEqual(["1100", "1141"]);
+    expect(items[1]!.v).toBe(-200);
+  });
+
+  test("an all-negative group lists its postings, most negative first", () => {
+    const { items, parentTotal } = levelItems(all, "rev", all[1]!, false);
+    expect(items.map((it) => it.v)).toEqual([-100, -50]);
+    expect(parentTotal).toBe(-150);
   });
 });

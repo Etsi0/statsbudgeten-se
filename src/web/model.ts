@@ -34,7 +34,10 @@ export const fmd = (tkr: number) => {
   if (m >= 0.1) return `${NF1.format(tkr / 1e6)} mdkr`;
   return `${NF0.format(tkr / 1e3)} mnkr`;
 };
-export const fpct = (p: number) => `${p >= 10 ? NF0.format(p) : p >= 0.1 ? NF1.format(p) : "<0,1"} %`;
+export const fpct = (p: number) => {
+  const a = Math.abs(p);
+  return `${a >= 10 ? NF0.format(p) : a >= 0.1 ? NF1.format(p) : "<0,1"} %`;
+};
 export const signed = (v: number) => (v > 0 ? "+" : v < 0 ? "−" : "±") + fmd(Math.abs(v));
 /** Exact amount in tkr, e.g. "1 543 317 501 tkr". */
 export const ftkr = (tkr: number) => `${NF0.format(Math.round(tkr))} tkr`;
@@ -155,15 +158,18 @@ export type Item = {
 };
 
 /**
- * The tiles at one drill level: the groups of a view, or the postings of one
+ * The items at one drill level: the groups of a view, or the postings of one
  * group (with the small ones bundled into an "Övriga" tile, or only those
- * when `rest` is set). `parentTotal` is what the tiles' shares are of.
+ * when `rest` is set). Negative groups and postings (deductions) come last;
+ * they cannot be tiles, so `placeItems` always puts them in the list.
+ * `parentTotal` is what the tiles' shares are of.
  */
 export function levelItems(all: NormGroup[], view: View, group: NormGroup | null, rest: boolean): { items: Item[]; parentTotal: number } {
   const hues = hueOf(all, view);
   if (!group) {
-    const groups = all.filter((g) => g.total > 0).sort((a, b) => b.total - a.total);
-    const items = groups.map((g, i) => ({
+    const pos = all.filter((g) => g.total > 0).sort((a, b) => b.total - a.total);
+    const neg = all.filter((g) => g.total < 0).sort((a, b) => a.total - b.total);
+    const items = [...pos, ...neg].map((g, i) => ({
       key: g.key,
       id: null,
       code: g.code,
@@ -171,28 +177,30 @@ export function levelItems(all: NormGroup[], view: View, group: NormGroup | null
       v: g.total,
       hue: hues[g.key]!,
       lv: i % 3,
-      rank: i / groups.length,
+      rank: i / (pos.length + neg.length),
       drill: true,
     }));
-    return { items, parentTotal: groups.reduce((s, g) => s + g.total, 0) };
+    return { items, parentTotal: pos.reduce((s, g) => s + g.total, 0) };
   }
   const T = COPY[view];
   const rows = group.rows.filter((r) => r.v > 0).sort((a, b) => b.v - a.v);
+  const negRows = rest ? [] : group.rows.filter((r) => r.v < 0).sort((a, b) => a.v - b.v);
   const sum = rows.reduce((s, r) => s + r.v, 0) || 1;
   const big = rows.filter((r) => r.v / sum >= TAIL_CUT);
   const tail = rows.filter((r) => r.v / sum < TAIL_CUT);
   const useTail = tail.length > 1 && !rest;
   const list = rest ? tail : useTail ? big : rows;
   const hue = hues[group.key]!;
-  const items: Item[] = list.map((r, i) => ({
+  const rowItem = (r: NormGroup["rows"][number], rank: number): Item => ({
     key: r.key,
     id: r.id,
     code: `${T.item} ${r.id ?? ""}`,
     label: r.title,
     v: r.v,
     hue,
-    rank: i / Math.max(1, list.length),
-  }));
+    rank,
+  });
+  const items: Item[] = list.map((r, i) => rowItem(r, i / Math.max(1, list.length)));
   if (useTail) {
     items.push({
       key: "__rest",
@@ -206,6 +214,7 @@ export function levelItems(all: NormGroup[], view: View, group: NormGroup | null
       drill: true,
     });
   }
+  items.push(...negRows.map((r) => rowItem(r, 1)));
   return { items, parentTotal: group.total };
 }
 
@@ -275,10 +284,11 @@ export function squarify<T>(items: { it: T; a: number }[], W: number, H: number)
   return out;
 }
 
-/** Lay the items out over W×H pixels, areas in proportion to their values. */
+/** Lay the items out over W×H pixels, areas in proportion to their values. Items with no positive value have no area and are skipped. */
 export function layout(items: Item[], W: number, H: number): Placed<Item>[] {
-  const sum = items.reduce((s, it) => s + it.v, 0) || 1;
-  return squarify(items.map((it) => ({ it, a: (it.v / sum) * W * H })), W, H);
+  const pos = items.filter((it) => it.v > 0);
+  const sum = pos.reduce((s, it) => s + it.v, 0) || 1;
+  return squarify(pos.map((it) => ({ it, a: (it.v / sum) * W * H })), W, H);
 }
 
 /** A tile this small can't carry its label. */
@@ -288,11 +298,12 @@ export const readable = (w: number, h: number) => w > 84 && h > 54;
  * The items as tiles over W×H pixels, with the ones that come out too small
  * to read moved to a list instead. Dropping items frees room for the rest,
  * so the layout is redone until every tile left is readable. The largest item
- * is always a tile, so the map is never empty.
+ * is always a tile, so the map is only empty when nothing is positive.
+ * Negative items (deductions) have no area and always go to the list.
  */
 export function placeItems(items: Item[], W: number, H: number): { placed: Placed<Item>[]; listed: Item[] } {
   const largest = items.reduce<Item | null>((m, it) => (m == null || it.v > m.v ? it : m), null);
-  let tiles = items;
+  let tiles = items.filter((it) => it.v > 0);
   for (;;) {
     const placed = layout(tiles, W, H);
     const small = new Set(placed.filter((p) => !readable(p.w, p.h) && p.it !== largest).map((p) => p.it.key));

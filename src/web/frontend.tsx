@@ -1261,7 +1261,9 @@ function App() {
   const { placed, listed } = placeItems(items, W, mapRoom);
   const mapH = listed.length ? mapRoom : Math.max(MAP_MIN, H);
   const infoOf = (it: Item): { info: Info; share: string } => {
-    const shareOfParent = (it.v / parentTotal) * 100;
+    // Against the magnitude, so deductions read as negative shares even in a
+    // group whose own total is negative.
+    const shareOfParent = (it.v / Math.abs(parentTotal)) * 100;
     const shareOfAll = (it.v / gross) * 100;
     return {
       share: fpct(group ? shareOfParent : shareOfAll),
@@ -1325,13 +1327,15 @@ function App() {
         ? {
             title: rest ? T.rest : group.title,
             value: fmd(rest ? sumItems : group.total),
-            share: `${fpct(((rest ? sumItems : group.total) / gross) * 100)} av ${T.all} ${year} · ${placed.length} block${listed.length ? ` och ${listed.length} rader` : ""}${priceNote}`,
+            share: `${fpct(((rest ? sumItems : group.total) / gross) * 100)} av ${T.all} ${year} · ${
+              placed.length ? `${placed.length} block${listed.length ? ` och ${listed.length} rader` : ""}` : `${listed.length} rader`
+            }${priceNote}`,
             hint: year != null && nominal(year) ? nominalNote : focusedRow ? "Esc för att avmarkera" : "Klicka på ett block för att se dess historik",
           }
         : {
             title: `${T.heading} ${year}`,
             value: fmd(total),
-            share: `${groups.length} ${T.areas}${negNote}${priceNote}`,
+            share: `${all.filter((g) => g.total !== 0).length} ${T.areas}${negNote}${priceNote}`,
             hint: year != null && nominal(year) ? nominalNote : "Klicka på ett block",
           };
   const info = hover ?? base;
@@ -1689,6 +1693,8 @@ function App() {
 
         {!overview && !about && !updates && !searching && (
           <>
+            {/* A group of only negative postings has no tiles at all: skip the map. */}
+            {placed.length > 0 && (
             <div className="map" style={{ height: mapH }}>
               {placed.map(({ it, x, y, w, h }) => {
                 const { bg, fg } = colorOf(it, !!group);
@@ -1717,8 +1723,9 @@ function App() {
                 );
               })}
             </div>
+            )}
             {listed.length > 0 && (
-              <ul className="small" aria-label="Poster som är för små att visa som block">
+              <ul className="small" aria-label="Poster som är för små eller negativa och därför visas som rader">
                 {listed.map((it) => {
                   const { bg } = colorOf(it, !!group);
                   const { info: rowInfo, share } = infoOf(it);
