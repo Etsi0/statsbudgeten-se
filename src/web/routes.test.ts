@@ -23,10 +23,10 @@ describe("parseRoute", () => {
   test("/sok is the search page and keeps the query", () => {
     expect(at("/sok")).toMatchObject({ mode: "search", q: "" });
     expect(at("/sok?q=f%C3%B6rsvar&year=2023")).toMatchObject({ mode: "search", q: "försvar", year: 2023 });
-    expect(buildUrl({ mode: "search", view: "exp", year: 2026, group: null, rest: false, item: null, real: false, unit: "kr", scale: "zero", q: "stöd till" }, 2026)).toBe("/sok?q=st%C3%B6d+till");
+    expect(buildUrl({ mode: "search", view: "exp", year: 2026, group: null, rest: false, item: null, real: false, unit: "kr", scale: "zero", from: null, to: null, q: "stöd till" }, 2026)).toBe("/sok?q=st%C3%B6d+till");
     expect(buildUrl({ mode: "search", view: "exp", year: 2026, group: null, rest: false, item: null, real: false, unit: "kr", scale: "zero", from: null, to: null, q: "" }, 2026)).toBe("/sok");
     // The query is only written for the search page.
-    expect(buildUrl({ mode: "overview", view: "exp", year: 2026, group: null, rest: false, item: null, real: false, unit: "kr", scale: "zero", q: "x" }, 2026)).toBe("/");
+    expect(buildUrl({ mode: "overview", view: "exp", year: 2026, group: null, rest: false, item: null, real: false, unit: "kr", scale: "zero", from: null, to: null, q: "x" }, 2026)).toBe("/");
   });
 
   test("/utgifter and /inkomster are the top-level treemaps", () => {
@@ -125,6 +125,9 @@ describe("windowYears", () => {
 
   test("a window that misses every year falls back to the whole list", () => {
     expect(windowYears(years, 1990, 1991)).toEqual(years);
+    expect(windowYears(years, 2030, null)).toEqual(years);
+    expect(windowYears(years, null, 1990)).toEqual(years);
+    expect(windowYears(years, 1990, null)).toEqual(years);
   });
 });
 

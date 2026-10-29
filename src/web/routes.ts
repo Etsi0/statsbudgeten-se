@@ -113,8 +113,7 @@ export function buildUrl(r: Route, latest: number | null): string {
 export function windowYears(years: number[], from: number | null, to: number | null): number[] {
   const sorted = [...years].sort((a, b) => a - b);
   if (!sorted.length || (from == null && to == null)) return sorted;
-  const lo = Math.min(from ?? sorted[0]!, to ?? sorted[sorted.length - 1]!);
-  const hi = Math.max(from ?? sorted[0]!, to ?? sorted[sorted.length - 1]!);
+  const [lo, hi] = from != null && to != null && from > to ? [to, from] : [from ?? -Infinity, to ?? Infinity];
   const span = sorted.filter((y) => y >= lo && y <= hi);
   return span.length ? span : sorted;
 }

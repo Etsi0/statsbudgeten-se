@@ -1211,9 +1211,13 @@ function App() {
   const synced = useRef<string | null>(null);
   const tracked = useRef<string | null>(null);
   useEffect(() => {
-    if (year == null) return;
-    const urlFrom = from != null && oldest != null && from > oldest ? from : null;
-    const urlTo = to != null && latest != null && to < latest ? to : null;
+    // Wait for the data: until the window is known the URL would lose its
+    // bounds, and a year the window is about to move stays off the history.
+    if (year == null || !span.includes(year)) return;
+    // The bounds are written as the window shows them: sorted, inside the
+    // series, and omitted when they are its ends.
+    const urlFrom = spanStart != null && oldest != null && spanStart > oldest ? spanStart : null;
+    const urlTo = spanEnd != null && latest != null && spanEnd < latest ? spanEnd : null;
     const url = buildUrl({ mode, view, year, group: group ? groupNumber(group.key) : null, rest, item: group ? itemId : null, real, unit, scale, from: urlFrom, to: urlTo, q }, latest);
     const current = window.location.pathname + window.location.search;
     if (url !== current) {
@@ -1229,7 +1233,7 @@ function App() {
     if (tracked.current !== page) trackPageView(page, mode === "search" ? "Sök" : pageTitle);
     tracked.current = page;
     synced.current = url;
-  }, [mode, view, year, group, rest, itemId, real, unit, scale, from, to, yrs, oldest, q, latest, pageTitle]);
+  }, [mode, view, year, group, rest, itemId, real, unit, scale, span, spanStart, spanEnd, oldest, q, latest, pageTitle]);
 
   // Items at the current drill level, with what a click on each does.
   const level = B ? levelItems(all, view, group, rest) : { items: [], parentTotal: total };
