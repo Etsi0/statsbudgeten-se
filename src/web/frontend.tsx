@@ -1476,6 +1476,7 @@ function App() {
                       onChange={(e) => {
                         const y = Number(e.target.value);
                         setFrom(oldest != null && y === oldest ? null : y);
+                        setTo(spanEnd === latest ? null : spanEnd);
                         setHover(null);
                       }}
                     >
@@ -1492,6 +1493,7 @@ function App() {
                       value={spanEnd ?? ""}
                       onChange={(e) => {
                         const y = Number(e.target.value);
+                        setFrom(spanStart === oldest ? null : spanStart);
                         setTo(latest != null && y === latest ? null : y);
                         setHover(null);
                       }}
